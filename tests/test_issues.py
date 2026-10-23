@@ -172,6 +172,27 @@ def test_create_issue_description_over_maximum_length_returns_422(client, valid_
     assert response.status_code == 422
 
 
+def test_create_issue_description_at_maximum_length_is_accepted(client, valid_issue_payload):
+    """Boundary: exactly 2000 characters is the documented maximum for description."""
+    description = "D" * 2000
+
+    response = client.post("/issues", json={**valid_issue_payload, "description": description})
+
+    assert response.status_code == 201
+    assert response.json()["description"] == description
+
+
+def test_create_issue_ignores_unknown_fields(client, valid_issue_payload):
+    """Extra keys are ignored (documented behaviour), but the known fields are stored."""
+    payload = {**valid_issue_payload, "owner": "someone", "priority": "P1"}
+
+    response = client.post("/issues", json=payload)
+
+    assert response.status_code == 201
+    assert "owner" not in response.json()
+    assert "priority" not in response.json()
+
+
 def test_create_issue_with_wrong_type_returns_422(client, valid_issue_payload):
     response = client.post("/issues", json={**valid_issue_payload, "title": 12345})
 
@@ -255,6 +276,39 @@ def test_list_issues_pagination_splits_records_across_pages(client, valid_issue_
     # No record is repeated across pages.
     ids = {item["id"] for item in first_page["items"] + second_page["items"] + last_page["items"]}
     assert len(ids) == 5
+
+
+def test_list_issues_page_beyond_the_last_page_returns_an_empty_page(client, valid_issue_payload):
+    """Boundary: a page number past the end must not fail or repeat records."""
+    for index in range(5):
+        client.post("/issues", json={**valid_issue_payload, "title": f"Overflow defect {index}"})
+
+    body = client.get("/issues?page=99&page_size=2").json()
+
+    assert body["total"] == 5
+    assert body["pages"] == 3
+    assert body["page"] == 99
+    assert body["items"] == []
+
+
+def test_list_issues_maximum_page_size_is_accepted(client, valid_issue_payload):
+    """Boundary: page_size 100 is the documented maximum and must be allowed."""
+    client.post("/issues", json=valid_issue_payload)
+
+    response = client.get("/issues?page_size=100")
+
+    assert response.status_code == 200
+    assert response.json()["page_size"] == 100
+
+
+def test_list_issues_page_size_one_returns_a_single_record(client, valid_issue_payload):
+    """Boundary: page_size 1 is the documented minimum."""
+    client.post("/issues", json={**valid_issue_payload, "title": "Single record page"})
+
+    body = client.get("/issues?page_size=1").json()
+
+    assert body["page_size"] == 1
+    assert len(body["items"]) == 1
 
 
 def test_list_issues_sorting_by_id_ascending_and_descending(client, valid_issue_payload):
@@ -348,6 +402,45 @@ def test_list_issues_with_invalid_query_parameters_returns_422(client, query):
     assert response.json()["error"]["type"] == "validation_error"
 
 
+def test_query_parameter_error_names_the_parameter_without_a_location_prefix(client):
+    """The documented error contract exposes the parameter name in ``field``."""
+    details = client.get("/issues?page=0").json()["error"]["details"]
+
+    assert details[0]["field"] == "page"
+    assert details[0]["message"]
+
+
+def test_list_issues_text_search_also_matches_the_description(client, valid_issue_payload):
+    client.post(
+        "/issues",
+        json={
+            **valid_issue_payload,
+            "title": "Unrelated title",
+            "description": "Crashes when uploading a 4K video",
+        },
+    )
+    client.post("/issues", json={**valid_issue_payload, "title": "Another defect"})
+
+    body = client.get("/issues?search=4K%20video").json()
+
+    assert body["total"] == 1
+    assert body["items"][0]["title"] == "Unrelated title"
+
+
+def test_list_issues_search_parameter_at_maximum_length_is_accepted(client):
+    response = client.get(f"/issues?search={'a' * 200}")
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 0
+
+
+def test_list_issues_search_parameter_over_maximum_length_returns_422(client):
+    response = client.get(f"/issues?search={'a' * 201}")
+
+    assert response.status_code == 422
+    assert response.json()["error"]["details"][0]["field"] == "search"
+
+
 # ---------------------------------------------------------------------------
 # PATCH /issues/{id}
 # ---------------------------------------------------------------------------
@@ -393,6 +486,39 @@ def test_patch_issue_persists_change_to_the_database(client, db_session, create_
     ).scalar_one()
 
     assert stored_status == "Closed"
+
+
+def test_patch_issue_can_clear_the_description_with_an_explicit_null(
+    client, db_session, create_issue
+):
+    """``PATCH`` distinguishes "field omitted" from "field set to null"."""
+    response = client.patch(f"/issues/{create_issue['id']}", json={"description": None})
+
+    assert response.status_code == 200
+    assert response.json()["description"] is None
+
+    stored = db_session.execute(
+        text("SELECT description FROM issues WHERE id = :id"), {"id": create_issue["id"]}
+    ).scalar_one()
+    assert stored is None
+
+
+def test_patch_issue_with_only_unknown_fields_returns_422(client, create_issue):
+    """Read-only fields such as ``id`` cannot be used to satisfy the "one field" rule."""
+    response = client.patch(f"/issues/{create_issue['id']}", json={"id": 999999})
+
+    assert response.status_code == 422
+    assert response.json()["error"]["type"] == "validation_error"
+
+
+def test_patch_issue_cannot_change_the_id_or_created_at(client, create_issue):
+    payload = {"id": 424242, "created_at": "2000-01-01T00:00:00Z", "status": "Closed"}
+
+    body = client.patch(f"/issues/{create_issue['id']}", json=payload).json()
+
+    assert body["id"] == create_issue["id"]
+    assert body["created_at"] == create_issue["created_at"]
+    assert body["status"] == "Closed"
 
 
 @pytest.mark.parametrize(
