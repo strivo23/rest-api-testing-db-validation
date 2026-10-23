@@ -119,16 +119,16 @@ All versions below were printed by the installed environment (Python 3.12.9 virt
 
 ### 3.1 Layers
 
-The application is a classic layered FastAPI service. Each layer has one responsibility, and the routing layer never contains SQL while the CRUD layer never raises HTTP errors ([crud.py](file:///c:/Users/Chandrakanth%20Reddy%20Y/Desktop/rest-api-testing-db-validation/app/crud.py) docstring states this explicitly).
+The application is a classic layered FastAPI service. Each layer has one responsibility, and the routing layer never contains SQL while the CRUD layer never raises HTTP errors ([crud.py](app/crud.py) docstring states this explicitly).
 
 | Layer | Module | Responsibility |
 | --- | --- | --- |
-| Presentation | [main.py](file:///c:/Users/Chandrakanth%20Reddy%20Y/Desktop/rest-api-testing-db-validation/app/main.py) | App factory, lifespan, CORS, router registration, static mount |
-| Routing | [routes/health.py](file:///c:/Users/Chandrakanth%20Reddy%20Y/Desktop/rest-api-testing-db-validation/app/routes/health.py), [routes/issues.py](file:///c:/Users/Chandrakanth%20Reddy%20Y/Desktop/rest-api-testing-db-validation/app/routes/issues.py), [routes/stats.py](file:///c:/Users/Chandrakanth%20Reddy%20Y/Desktop/rest-api-testing-db-validation/app/routes/stats.py) | HTTP verbs, status codes, query parameters, dependency injection |
-| Validation / serialisation | [schemas.py](file:///c:/Users/Chandrakanth%20Reddy%20Y/Desktop/rest-api-testing-db-validation/app/schemas.py) | Pydantic models, enum + length rules, UTC normalisation |
-| Business logic / data access | [crud.py](file:///c:/Users/Chandrakanth%20Reddy%20Y/Desktop/rest-api-testing-db-validation/app/crud.py) | Create/read/update/delete, filtering, sorting, pagination, aggregates |
-| Persistence | [models.py](file:///c:/Users/Chandrakanth%20Reddy%20Y/Desktop/rest-api-testing-db-validation/app/models.py), [database.py](file:///c:/Users/Chandrakanth%20Reddy%20Y/Desktop/rest-api-testing-db-validation/app/database.py) | ORM models, engine, session factory, `get_db` dependency |
-| Cross-cutting | [config.py](file:///c:/Users/Chandrakanth%20Reddy%20Y/Desktop/rest-api-testing-db-validation/app/config.py), [errors.py](file:///c:/Users/Chandrakanth%20Reddy%20Y/Desktop/rest-api-testing-db-validation/app/errors.py) | Settings, consistent error contract, exception handlers |
+| Presentation | [main.py](app/main.py) | FastAPI application instance, lifespan, CORS, router registration, static mount |
+| Routing | [routes/health.py](app/routes/health.py), [routes/issues.py](app/routes/issues.py), [routes/stats.py](app/routes/stats.py) | HTTP verbs, status codes, query parameters, dependency injection |
+| Validation / serialisation | [schemas.py](app/schemas.py) | Pydantic models, enum + length rules, UTC normalisation |
+| Business logic / data access | [crud.py](app/crud.py) | Create/read/update/delete, filtering, sorting, pagination, aggregates |
+| Persistence | [models.py](app/models.py), [database.py](app/database.py) | ORM models, engine, session factory, `get_db` dependency |
+| Cross-cutting | [config.py](app/config.py), [errors.py](app/errors.py) | Settings, consistent error contract, exception handlers |
 | Data store | PostgreSQL | `issues` table, `CHECK` constraints, 6 indexes |
 
 ### 3.2 Architecture diagram
@@ -178,14 +178,14 @@ flowchart TB
 ### 3.3 How components communicate (request flow for `POST /issues`)
 
 1. Uvicorn receives the HTTP request and hands it to the FastAPI application.
-2. `CORSMiddleware` and the registered exception handlers wrap the call ([main.py](file:///c:/Users/Chandrakanth%20Reddy%20Y/Desktop/rest-api-testing-db-validation/app/main.py#L51-L59)).
+2. `CORSMiddleware` and the registered exception handlers wrap the call ([main.py](app/main.py#L51-L59)).
 3. The `issues` router matches `POST /issues`; FastAPI injects a DB session through `Depends(get_db)`.
 4. Pydantic validates the body against `IssueCreate`. A failure raises `RequestValidationError`, and the handler returns `422` with a field-level `details` array.
 5. `crud.create_issue()` builds an `Issue` ORM object and commits the transaction.
 6. The database `CHECK` constraints act as the second line of defence; a violation surfaces as a `SQLAlchemyError` and is converted to a safe `500 database_error`.
 7. The row is serialised with `IssueRead` (UTC timestamps guaranteed) and returned as `201`.
 
-**Router ordering note:** `stats.router` is included **before** `issues.router` so that `/issues/stats` is not captured by `/issues/{issue_id}` ([main.py](file:///c:/Users/Chandrakanth%20Reddy%20Y/Desktop/rest-api-testing-db-validation/app/main.py#L61-L64)). A dedicated test asserts this (`test_stats_route_is_not_shadowed_by_issue_id_route`).
+**Router ordering note:** `stats.router` is included **before** `issues.router` so that `/issues/stats` is not captured by `/issues/{issue_id}` ([main.py](app/main.py#L61-L64)). A dedicated test asserts this (`test_stats_route_is_not_shadowed_by_issue_id_route`).
 
 ---
 
@@ -269,7 +269,7 @@ The project was built in the seven phases requested by the specification.
 ### Phase 1 - Environment inspection and scaffolding
 
 ```powershell
-cd "c:\Users\Chandrakanth Reddy Y\Desktop\rest-api-testing-db-validation"
+cd rest-api-testing-db-validation
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
@@ -344,7 +344,7 @@ The schema is a **single table** (`issues`). There are **no foreign keys** becau
 
 ### 6.2 Constraints
 
-Defined in [models.py](file:///c:/Users/Chandrakanth%20Reddy%20Y/Desktop/rest-api-testing-db-validation/app/models.py#L87-L104) (ORM) and [schema.sql](file:///c:/Users/Chandrakanth%20Reddy%20Y/Desktop/rest-api-testing-db-validation/sql/schema.sql#L31-L37) (SQL) with identical names:
+Defined in [models.py](app/models.py#L87-L104) (ORM) and [schema.sql](sql/schema.sql#L31-L37) (SQL) with identical names:
 
 | Constraint | Definition |
 | --- | --- |
@@ -601,7 +601,7 @@ Every failure - regardless of cause - returns:
 | 500 | `internal_error` | generic `Exception` fallback |
 | 503 | - | `/health` (plain payload, not the error contract) |
 
-Stack traces, SQL text and credentials are never returned; they are logged server-side only ([errors.py](file:///c:/Users/Chandrakanth%20Reddy%20Y/Desktop/rest-api-testing-db-validation/app/errors.py#L88-L105)).
+Stack traces, SQL text and credentials are never returned; they are logged server-side only ([errors.py](app/errors.py#L88-L105)).
 
 ---
 
@@ -615,7 +615,7 @@ Stack traces, SQL text and credentials are never returned; they are logged serve
 | **API testing** | Black-box testing of HTTP contracts | The Postman collection (16 requests, 69 assertions) executed in Postman or Newman |
 | **Database validation** | Verifying stored state independently of the API | `sql/validation_queries.sql` (17 queries) + SQL reads inside pytest |
 | **Integration testing** | Verifying the real driver/server behaviour | `tests/integration/test_postgres_integration.py` against real PostgreSQL |
-| **Automated testing** | Repeatable, deterministic regression suite | pytest + FastAPI `TestClient`, 108 collected tests |
+| **Automated testing** | Repeatable, deterministic regression suite | pytest + FastAPI `TestClient`, 120 collected tests |
 
 The key principle: **API testing alone is not sufficient.** A 201 response only proves the API *said* it stored the data. The SQL layer proves the row actually exists with the right values.
 
@@ -625,12 +625,12 @@ The key principle: **API testing alone is not sufficient.** A 201 response only 
 | --- | --- | --- |
 | `tests/conftest.py` | - | Fixtures only (no tests). Defines `db_engine`, `db_session`, `client`, `valid_issue_payload`, `create_issue` |
 | `tests/test_health.py` | 4 | Health 200 with dialect, root discovery links, OpenAPI schema contains all endpoints, health 503 when DB is down |
-| `tests/test_issues.py` | 76 | CRUD, every enum value, missing/invalid fields, title boundaries, filters, sorting, pagination, SQL constraints, indexes |
+| `tests/test_issues.py` | 103 | CRUD, every enum value, missing/invalid fields, title boundaries, filters, sorting, pagination, SQL constraints, indexes |
 | `tests/test_stats.py` | 5 | Zero buckets on empty DB, accuracy, consistency after update, after delete, route not shadowed |
 | `tests/test_errors.py` | 3 | Safe 500 on DB failure, consistent 404, consistent 405 |
 | `tests/integration/test_postgres_integration.py` | 5 | PostgreSQL dialect reporting, UTC `TIMESTAMPTZ`, real CHECK violation via raw SQL, `updated_at` after PATCH, delete-then-select |
 
-**Total collected: 108** (103 run + 5 skipped by default).
+**Total collected: 120** (115 run + 5 skipped by default).
 
 ### 8.3 Test categories in the suite
 
@@ -700,14 +700,14 @@ newman run postman/REST_API_Testing.postman_collection.json
 ### 9.2 pytest result (actual)
 
 ```text
-103 passed, 5 skipped, 1 warning in 3.45s
+115 passed, 5 skipped, 1 warning in 3.93s
 ```
 
 | Metric | Value |
 | --- | --- |
-| Tests collected | 108 |
-| Executed | 103 |
-| **Passed** | **103** |
+| Tests collected | 120 |
+| Executed | 115 |
+| **Passed** | **115** |
 | Failed | 0 |
 | Errors | 0 |
 | Skipped | 5 (PostgreSQL integration tests - `TEST_DATABASE_URL` not configured) |
@@ -723,19 +723,19 @@ app\config.py               22      0   100%
 app\crud.py                 61      1    98%   99
 app\database.py             27      8    70%   31, 45-52
 app\db_init.py              15     15     0%   11-34
-app\errors.py               40      2    95%   101-102
+app\errors.py               41      2    95%   109-110
 app\main.py                 33      3    91%   33-35
 app\models.py               48      0   100%
 app\routes\__init__.py       2      0   100%
 app\routes\health.py        18      0   100%
 app\routes\issues.py        34      0   100%
 app\routes\stats.py          9      0   100%
-app\schemas.py             102      8    92%   45, 68, 71, 77-80, 110
+app\schemas.py              92      6    93%   45, 68, 71, 79-80, 110
 ------------------------------------------------------
-TOTAL                      412     37    91%
+TOTAL                      403     35    91%
 ```
 
-Uncovered lines are all intentional: `db_init.py` is a CLI wrapper run manually; `database.py` lines 45-52 are the PostgreSQL pool branch; `main.py` 33-35 is the `AUTO_CREATE_TABLES` startup branch; `schemas.py` contains defensive `None` branches; `errors.py` 101-102 is the deliberately hard-to-trigger generic fallback.
+Uncovered lines are all intentional: `db_init.py` is a CLI wrapper run manually; `database.py` lines 45-52 are the PostgreSQL pool branch plus the module-level engine creation; `main.py` 33-35 is the `AUTO_CREATE_TABLES` startup branch; `schemas.py` contains defensive `None` branches; `errors.py` 109-110 is the deliberately hard-to-trigger generic fallback.
 
 ### 9.4 Postman collection result (actual, Newman)
 
@@ -789,15 +789,15 @@ These items are marked *Pending* (never claimed as passing) in `test-documentati
 
 | Area | Implementation | Evidence |
 | --- | --- | --- |
-| **Input validation** | Pydantic v2: `Field(min_length=3, max_length=200)`, enum types, `max_length=2000` on description, `field_validator` trimming, `model_validator` requiring ≥1 field on PATCH | [schemas.py](file:///c:/Users/Chandrakanth%20Reddy%20Y/Desktop/rest-api-testing-db-validation/app/schemas.py) |
-| **Query-parameter validation** | `page ≥ 1`, `1 ≤ page_size ≤ 100`, `search ≤ 200`, `Literal` types for `sort_by`/`order` | [routes/issues.py](file:///c:/Users/Chandrakanth%20Reddy%20Y/Desktop/rest-api-testing-db-validation/app/routes/issues.py#L48-L70) |
+| **Input validation** | Pydantic v2: `Field(min_length=3, max_length=200)`, enum types, `max_length=2000` on description, `field_validator` trimming, `model_validator` requiring ≥1 field on PATCH | [schemas.py](app/schemas.py) |
+| **Query-parameter validation** | `page ≥ 1`, `1 ≤ page_size ≤ 100`, `search ≤ 200`, `Literal` types for `sort_by`/`order` | [routes/issues.py](app/routes/issues.py#L48-L70) |
 | **SQL injection protection** | All access goes through the SQLAlchemy ORM / Core `select()` with bound parameters. The only raw SQL is `text("SELECT 1")` in the health check (no user input) | `crud.py`, `routes/health.py` |
-| **Database constraints** | Five `CHECK` constraints + NOT NULL, so integrity holds even if the API layer is bypassed | [models.py](file:///c:/Users/Chandrakanth%20Reddy%20Y/Desktop/rest-api-testing-db-validation/app/models.py#L87-L104), [schema.sql](file:///c:/Users/Chandrakanth%20Reddy%20Y/Desktop/rest-api-testing-db-validation/sql/schema.sql) |
-| **No credential leakage** | `errors.py` returns only `type`/`message`; the DB handler logs `exc.__class__.__name__` only. `db_init` logs `engine.url.render_as_string(hide_password=True)`. A test asserts the 500 body contains no `password`/`sqlalchemy`/`traceback` | [test_errors.py](file:///c:/Users/Chandrakanth%20Reddy%20Y/Desktop/rest-api-testing-db-validation/tests/test_errors.py#L38-L40) |
-| **No stack traces to clients** | Global handlers for `SQLAlchemyError` and `Exception` return generic messages; details go to the log | [errors.py](file:///c:/Users/Chandrakanth%20Reddy%20Y/Desktop/rest-api-testing-db-validation/app/errors.py#L88-L105) |
-| **Secret management** | Configuration only via env vars / `.env`; `.env.example` contains placeholders only; `.env` is git-ignored | [.env.example](file:///c:/Users/Chandrakanth%20Reddy%20Y/Desktop/rest-api-testing-db-validation/.env.example), [.gitignore](file:///c:/Users/Chandrakanth%20Reddy%20Y/Desktop/rest-api-testing-db-validation/.gitignore#L1-L4) |
-| **Session/transaction hygiene** | `get_db()` rolls back on exception and always closes the session; `pool_pre_ping=True` avoids stale connections | [database.py](file:///c:/Users/Chandrakanth%20Reddy%20Y/Desktop/rest-api-testing-db-validation/app/database.py#L43-L52) |
-| **CORS** | Configurable allow-list via `CORS_ORIGINS`; `allow_credentials=False` | [main.py](file:///c:/Users/Chandrakanth%20Reddy%20Y/Desktop/rest-api-testing-db-validation/app/main.py#L51-L57) |
+| **Database constraints** | Five `CHECK` constraints + NOT NULL, so integrity holds even if the API layer is bypassed | [models.py](app/models.py#L87-L104), [schema.sql](sql/schema.sql) |
+| **No credential leakage** | `errors.py` returns only `type`/`message`; the DB handler logs `exc.__class__.__name__` only. `db_init` logs `engine.url.render_as_string(hide_password=True)`. A test asserts the 500 body contains no `password`/`sqlalchemy`/`traceback` | [test_errors.py](tests/test_errors.py#L38-L40) |
+| **No stack traces to clients** | Global handlers for `SQLAlchemyError` and `Exception` return generic messages; details go to the log | [errors.py](app/errors.py#L88-L105) |
+| **Secret management** | Configuration only via env vars / `.env`; `.env.example` contains placeholders only; `.env` is git-ignored | [.env.example](.env.example), [.gitignore](.gitignore#L1-L4) |
+| **Session/transaction hygiene** | `get_db()` rolls back on exception and always closes the session; `pool_pre_ping=True` avoids stale connections | [database.py](app/database.py#L43-L52) |
+| **CORS** | Configurable allow-list via `CORS_ORIGINS`; `allow_credentials=False` | [main.py](app/main.py#L51-L57) |
 | **No real personal data** | All sample data is synthetic (defect descriptions about UI buttons, forms, etc.) | - |
 | **Safe failure** | Database outage → `503` on `/health` and `500 database_error` on write paths, never a crash | `test_health_returns_503_when_database_is_unavailable`, `test_database_failure_returns_safe_500_response` |
 
@@ -860,7 +860,7 @@ These are idiomatic difficulties for this kind of stack and are marked as **pote
 ### 12.2 Windows (PowerShell)
 
 ```powershell
-cd "c:\Users\Chandrakanth Reddy Y\Desktop\rest-api-testing-db-validation"
+cd rest-api-testing-db-validation
 
 # 1. Virtual environment
 python -m venv .venv
@@ -962,7 +962,7 @@ Only skills directly supported by the implementation are listed.
 
 **Backend development**
 - Designing a layered FastAPI application (routers → schemas → CRUD → ORM).
-- FastAPI dependency injection (`Depends(get_db)`), app factory, lifespan context manager, CORS.
+- FastAPI dependency injection (`Depends(get_db)`), lifespan context manager, CORS.
 - HTTP semantics: correct use of 200/201/204/404/422/500/503.
 - Pydantic v2 validation (enums, `field_validator`, `model_validator`, `ConfigDict(from_attributes=True)`).
 - Centralised exception handling with a consistent error contract.
@@ -1018,7 +1018,7 @@ Only skills directly supported by the implementation are listed.
 
 ### 14.2 Future improvements
 
-1. Add Alembic migrations and a CI pipeline (GitHub Actions) running `pytest`, a coverage gate and Newman on every push.
+1. Add Alembic migrations and extend the existing GitHub Actions workflow (`.github/workflows/tests.yml`, which already runs `pytest` on every push and pull request) with a coverage gate and a Newman step.
 2. Add authentication (JWT or API key) with role-based permissions (tester vs admin).
 3. Add soft delete, an audit/history table, and `assignee`, `reporter`, `fixed_in_version` fields.
 4. Use PostgreSQL full-text search (`tsvector`) or trigram indexes for `search`.
@@ -1058,7 +1058,7 @@ Without a tie-breaker, two rows with the same sort value have an undefined relat
 Three ways: SQL reads inside pytest (e.g. `SELECT severity, status FROM issues WHERE id = :id`) that assert the stored values; `sql/validation_queries.sql` for manual `psql` verification against the same row the API returned; and Postman follow-up `pm.sendRequest` GETs (requests 10 and 11) that re-read the record after a PATCH to prove persistence and non-modification on failure.
 
 **Q9. What does `pytest-cov` measure, and what does 91% mean here?**
-It measures the fraction of executable statements in `app/` exercised by the tests. 91% means 375 of 412 statements executed (37 missed). The uncovered lines are all justified in §9.3 - CLI wrappers, the PostgreSQL pool branch, an optional startup flag and defensive branches. High coverage is not the goal; covering the *business-critical* paths is, and `crud.py`, `models.py` and all three route modules are at 98-100%.
+It measures the fraction of executable statements in `app/` exercised by the tests. 91% means 368 of 403 statements executed (35 missed). The uncovered lines are all justified in §9.3 - CLI wrappers, the PostgreSQL pool branch, an optional startup flag and defensive branches. High coverage is not the goal; covering the *business-critical* paths is, and `crud.py`, `models.py` and all three route modules are at 98-100%.
 
 **Q10. How does the PATCH endpoint avoid overwriting fields the client did not send?**
 `crud.update_issue()` calls `payload.model_dump(exclude_unset=True)`. Pydantic tracks which fields were explicitly provided (`model_fields_set`), so only those fields are assigned onto the ORM object. `test_patch_issue_status_only` asserts that title, severity and `created_at` retain their original values.
@@ -1084,17 +1084,17 @@ The biggest gaps are authentication/authorisation, database migrations (Alembic)
 
 ### 16.1 GitHub README summary
 
-> A production-style **defect-tracking REST API** built with **FastAPI, SQLAlchemy 2.x and PostgreSQL**, surrounded by a complete QA toolchain: a **16-request Postman collection**, an **automated pytest suite (103 passing tests, 91% coverage)** with **15 opt-in PostgreSQL integration tests**, **17 SQL validation queries**, and full test documentation (test plan, 84 test cases, defect report template, database validation workflow, test execution report).
+> A production-style **defect-tracking REST API** built with **FastAPI, SQLAlchemy 2.x and PostgreSQL**, surrounded by a complete QA toolchain: a **16-request Postman collection**, an **automated pytest suite (115 passing tests, 91% coverage)** with **5 opt-in PostgreSQL integration tests**, **17 SQL validation queries**, and full test documentation (test plan, 84 test cases, defect report template, database validation workflow, test execution report).
 >
 > The API exposes health, CRUD, filtering/sorting/pagination and statistics endpoints, validates every input twice (Pydantic + database `CHECK` constraints), uses UTC timestamps throughout, and returns a consistent JSON error contract that never leaks stack traces or credentials. The automated suite is fully isolated - each test runs on a fresh in-memory SQLite database, and the integration suite refuses to touch any database that is not named `*_test`.
 
 ### 16.2 Resume bullets (DRAFTS - use only after you have personally run and verified the relevant features)
 
 > **Draft 1 (overall project):**
-> Built a defect-tracking REST API with FastAPI, SQLAlchemy 2.x and PostgreSQL, plus a full QA toolchain - a 16-request Postman collection, a 103-test pytest suite with 91% statement coverage, 17 SQL validation queries, and five test documentation deliverables.
+> Built a defect-tracking REST API with FastAPI, SQLAlchemy 2.x and PostgreSQL, plus a full QA toolchain - a 16-request Postman collection, a 115-test pytest suite with 91% statement coverage, 17 SQL validation queries, and five test documentation deliverables.
 
 > **Draft 2 (testing depth):**
-> Designed 84 test cases (functional, negative, boundary-value, data-consistency, integration, regression) and automated 103 of them with pytest and FastAPI TestClient, verifying stored data with direct SQL rather than trusting API responses alone.
+> Designed 84 test cases (functional, negative, boundary-value, data-consistency, integration, regression) and automated the core suites with pytest and FastAPI TestClient, verifying stored data with direct SQL rather than trusting API responses alone.
 
 > **Draft 3 (engineering quality):**
 > Implemented layered API architecture with dual-layer validation (Pydantic + database CHECK constraints), a consistent JSON error contract that leaks no internal detail, environment-based configuration with zero hardcoded credentials, and fully isolated tests that cannot modify a developer's database.
@@ -1119,7 +1119,7 @@ The biggest gaps are authentication/authorisation, database migrations (Alembic)
 
 | Command | Outcome |
 | --- | --- |
-| `.\.venv\Scripts\python.exe -m pytest --cov=app --cov-report=term-missing -q` | `103 passed, 5 skipped, 1 warning`; TOTAL 412 stmts, 37 miss, **91%** |
+| `.\.venv\Scripts\python.exe -m pytest --cov=app --cov-report=term-missing -q` | `115 passed, 5 skipped, 1 warning`; TOTAL 403 stmts, 35 miss, **91%** |
 | `python -c "import ..."` (version probe) | Python 3.12.9; FastAPI 0.161.1; Starlette 1.9.0; Uvicorn 0.54.0; SQLAlchemy 2.1.6; Pydantic 2.14.1; pydantic-settings 2.16.1; psycopg2 2.9.13; pytest 9.1.1; pytest-cov 7.1.0; httpx 0.28.1 |
 | `Select-String '"Pass"' / '"Pending"' test-cases.csv` | 79 Pass, 5 Pending, 84 data rows |
 | Test-case ID group count | CRE 25, DBC 5, DEL 5, ERR 2, GET 5, HLT 4, INT 5, LST 12, REG 3, STA 6, UPD 12 (= 84) |
@@ -1140,4 +1140,4 @@ The biggest gaps are authentication/authorisation, database migrations (Alembic)
 
 ---
 
-*End of report. The PDF copy was not generated in this environment (no Markdown-to-PDF converter available); see the delivery note in the chat for details.*
+*End of report. A formatted PDF copy (`PROJECT_TECHNICAL_REPORT.pdf`) is generated locally alongside this file; it is listed in `.gitignore` and is therefore not committed to the repository. Regenerate it from this Markdown file if you need it.*

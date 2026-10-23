@@ -43,37 +43,37 @@ pytest --cov=app --cov-report=term-missing
 ### Result
 
 ```text
-collected 108 items
+collected 120 items
 
-tests/test_errors.py ...................... 3 tests
+tests/test_errors.py ....................... 3 tests
 tests/test_health.py ....................... 4 tests
-tests/test_issues.py ...................... 91 tests
+tests/test_issues.py ...................... 103 tests
 tests/test_stats.py ........................ 5 tests
 tests/integration/test_postgres_integration.py sssss  5 skipped
 
-103 passed, 5 skipped, 1 warning in ~3s
+115 passed, 5 skipped, 1 warning in 3.93s
 ```
 
 | Metric | Value |
 | --- | --- |
-| Test cases executed | 103 |
-| Passed | 103 |
+| Test cases executed | 115 |
+| Passed | 115 |
 | Failed | 0 |
 | Errors | 0 |
 | Skipped | 5 (PostgreSQL integration tests - `TEST_DATABASE_URL` not configured) |
 | Warnings | 1 (Starlette deprecation notice about the `httpx` TestClient shim inside FastAPI itself, not project code) |
-| Execution time | 2.85 s |
+| Execution time | 3.93 s |
 
 ### Suite contents
 
 | File | Focus | Test cases |
 | --- | --- | --- |
 | `tests/test_health.py` | Health check, root endpoint, OpenAPI schema, degraded database | 4 |
-| `tests/test_issues.py` | Create/read/update/delete, validation, boundary values, filtering, sorting, pagination, SQL constraints | 91 |
+| `tests/test_issues.py` | Create/read/update/delete, validation, boundary values, filtering, sorting, pagination, SQL constraints | 103 |
 | `tests/test_stats.py` | Statistics accuracy, consistency after update/delete, route ordering | 5 |
 | `tests/test_errors.py` | Global error contract, database failure handling, 404/405 | 3 |
 | `tests/integration/test_postgres_integration.py` | PostgreSQL specific behaviour (skipped) | 5 |
-| **Total collected** | | **108** |
+| **Total collected** | | **120** |
 
 ## 3. Coverage report (pytest-cov)
 
@@ -85,16 +85,16 @@ app\config.py               22      0   100%
 app\crud.py                 61      1    98%   99
 app\database.py             27      8    70%   31, 45-52
 app\db_init.py              15     15     0%   11-34
-app\errors.py               40      2    95%   101-102
+app\errors.py               41      2    95%   109-110
 app\main.py                 33      3    91%   33-35
 app\models.py               48      0   100%
 app\routes\__init__.py       2      0   100%
 app\routes\health.py        18      0   100%
 app\routes\issues.py        34      0   100%
 app\routes\stats.py          9      0   100%
-app\schemas.py             102      8    92%   45, 68, 71, 77-80, 110
+app\schemas.py              92      6    93%   45, 68, 71, 79-80, 110
 ------------------------------------------------------
-TOTAL                      412     37    91%
+TOTAL                      403     35    91%
 ```
 
 Notes on the uncovered lines (all intentional):
@@ -181,9 +181,10 @@ verification step touched a real development database.
 | --- | --- | --- | --- |
 | - | No defect was found in the delivered version. All executed assertions passed. | - | - |
 
-The suite passed on the complete first run (100 passed, 5 skipped) and again after the
-error-handling tests were added (103 passed). No failures were hidden or re-run until they
-passed; no test was disabled to make the build green.
+The suite passed on the complete first run (100 passed, 5 skipped), again after the
+error-handling tests were added (103 passed), and again after the boundary and validation
+cases were added (115 passed). No failures were hidden or re-run until they passed; no test was
+disabled to make the build green.
 
 An **illustrative** defect entry (clearly labelled as fictional) is included in
 `test-documentation/defect-report-template.md` to demonstrate the report format. It does
@@ -201,8 +202,8 @@ not describe a defect observed in this project.
 
 | Exit criterion | Target | Actual | Verdict |
 | --- | --- | --- | --- |
-| Automated suite executed | 100% of collected tests | 103 executed, 5 skipped (environment), 0 failed | Met |
-| Line coverage of `app` | Reported and justified | 91% (37 statements uncovered, each explained in section 3) | Met |
+| Automated suite executed | 100% of collected tests | 115 executed, 5 skipped (environment), 0 failed | Met |
+| Line coverage of `app` | Reported and justified | 91% (35 statements uncovered, each explained in section 3) | Met |
 | Postman collection executed | All requests and assertions pass | 21 requests / 69 assertions, 0 failures | Met |
 | Open Critical/High defect on a documented core flow | 0 | 0 | Met |
 | SQL validation with 0 invalid rows | 0 rows | Pending - requires PostgreSQL (section 7) | Not verifiable here |
@@ -221,7 +222,7 @@ not describe a defect observed in this project.
 
 ## 10. Conclusion
 
-The implemented API meets the documented behaviour for all executed scenarios: 103 automated
+The implemented API meets the documented behaviour for all executed scenarios: 115 automated
 tests and 69 Postman assertions pass with 0 failures, coverage is 91%, and the live server
 verification confirms create/read/update/list/stats/delete behaviour end to end. The only
 open item is the PostgreSQL-specific verification, which requires a PostgreSQL installation
