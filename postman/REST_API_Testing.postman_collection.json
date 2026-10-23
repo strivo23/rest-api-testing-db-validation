@@ -1,0 +1,1156 @@
+{
+  "info": {
+    "_postman_id": "8f1c2f4e-4c1b-4a1e-9f0d-2b7c5a6d10aa",
+    "name": "REST API Testing & Database Validation",
+    "description": "API test collection for the REST API Testing & Database Validation Platform (FastAPI + PostgreSQL defect tracker).\n\nHow to use:\n1. Start the API locally: `uvicorn app.main:app --reload` (default http://127.0.0.1:8000).\n2. In Postman open Collections > Import and select this file (postman/REST_API_Testing.postman_collection.json).\n3. Check the collection variable `baseUrl` (Collection > Variables) - the default is http://127.0.0.1:8000.\n4. Run the whole collection with the Collection Runner (or `newman run postman/REST_API_Testing.postman_collection.json`).\n   Keep the requests in the default order: the Update/Delete folder reuses the id captured by \"02 - Create a valid defect\".\n   Every request can also be sent individually - requests that need an id create one through their pre-request script.\n5. No test depends on a hardcoded database id; ids are captured from responses into collection variables.\n\nShared collection variables:\n- baseUrl      : API base URL\n- issueId      : id captured from the \"create valid defect\" request and reused for read/update/delete\n- severityIssueIds : ids created by the all-severities sweep\n- deletedIssueId   : id used to verify that a deleted defect is really gone",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "noauth"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Collection level pre-request script: make sure baseUrl always has a value.",
+          "if (!pm.collectionVariables.get(\"baseUrl\")) {",
+          "    pm.collectionVariables.set(\"baseUrl\", \"http://127.0.0.1:8000\");",
+          "}",
+          "// Fail fast with a readable message when the API is not running.",
+          "pm.test(\"baseUrl collection variable is configured\", function () {",
+          "    pm.expect(pm.collectionVariables.get(\"baseUrl\")).to.be.a(\"string\").and.to.not.be.empty;",
+          "});"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:8000",
+      "type": "string"
+    },
+    {
+      "key": "issueId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "severityIssueIds",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "deletedIssueId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Health & Smoke",
+      "description": "Verify that the API is up and that the database connection is healthy.",
+      "item": [
+        {
+          "name": "01 - Health check",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response content type is JSON\", function () {",
+                  "    pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"application/json\");",
+                  "});",
+                  "",
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test(\"Response contains the expected fields\", function () {",
+                  "    pm.expect(body).to.have.property(\"status\");",
+                  "    pm.expect(body).to.have.property(\"database\");",
+                  "    pm.expect(body).to.have.property(\"version\");",
+                  "});",
+                  "",
+                  "pm.test(\"API status is ok\", function () {",
+                  "    pm.expect(body.status).to.eql(\"ok\");",
+                  "});",
+                  "",
+                  "pm.test(\"Database connection is healthy\", function () {",
+                  "    pm.expect(body.database).to.eql(\"connected\");",
+                  "    pm.expect(body.dialect).to.be.oneOf([\"postgresql\", \"sqlite\"]);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "GET /health - returns 200 when the API and database are available, 503 when the database is unreachable."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "2. Create Defects",
+      "description": "Positive creation scenarios, including every supported severity value.",
+      "item": [
+        {
+          "name": "02 - Create a valid defect",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.test(\"Response content type is JSON\", function () {",
+                  "    pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"application/json\");",
+                  "});",
+                  "",
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test(\"A numeric id was generated\", function () {",
+                  "    pm.expect(body.id).to.be.a(\"number\");",
+                  "    pm.expect(body.id).to.be.above(0);",
+                  "});",
+                  "",
+                  "pm.test(\"All submitted fields are echoed back\", function () {",
+                  "    pm.expect(body.title).to.eql(\"Login button unresponsive on Android 13\");",
+                  "    pm.expect(body.severity).to.eql(\"High\");",
+                  "    pm.expect(body.status).to.eql(\"Open\");",
+                  "    pm.expect(body.category).to.eql(\"Functional\");",
+                  "    pm.expect(body.environment).to.eql(\"Android\");",
+                  "    pm.expect(body.description).to.be.a(\"string\");",
+                  "});",
+                  "",
+                  "pm.test(\"Timestamps are present and identical on creation\", function () {",
+                  "    pm.expect(body.created_at).to.be.a(\"string\");",
+                  "    pm.expect(body.updated_at).to.be.a(\"string\");",
+                  "    pm.expect(body.created_at).to.eql(body.updated_at);",
+                  "});",
+                  "",
+                  "// Capture the generated id so the read/update/delete requests can reuse it.",
+                  "pm.collectionVariables.set(\"issueId\", body.id);",
+                  "pm.collectionVariables.set(\"deletedIssueId\", \"\");",
+                  "console.log(\"Captured issueId = \" + body.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Login button unresponsive on Android 13\",\n  \"description\": \"Tapping the Log in button does not submit the form.\",\n  \"severity\": \"High\",\n  \"status\": \"Open\",\n  \"category\": \"Functional\",\n  \"environment\": \"Android\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/issues",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "issues"
+              ]
+            },
+            "description": "POST /issues - creates a defect and returns 201 with the generated id. The id is stored in the collection variable `issueId`."
+          },
+          "response": []
+        },
+        {
+          "name": "03 - Create a defect with every supported severity",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "const severities = [\"Low\", \"Medium\", \"High\", \"Critical\"];",
+                  "const baseUrl = pm.collectionVariables.get(\"baseUrl\");",
+                  "const createdIds = {};",
+                  "",
+                  "// This test script itself creates one defect per severity and verifies each one.",
+                  "const createOne = function (severity) {",
+                  "    return pm.sendRequest({",
+                  "        url: baseUrl + \"/issues\",",
+                  "        method: \"POST\",",
+                  "        header: { \"Content-Type\": \"application/json\" },",
+                  "        body: {",
+                  "            mode: \"raw\",",
+                  "            raw: JSON.stringify({",
+                  "                title: \"Severity sweep - \" + severity + \" defect example\",",
+                  "                description: \"Created by the Postman severity sweep.\",",
+                  "                severity: severity,",
+                  "                status: \"Open\",",
+                  "                category: \"API\",",
+                  "                environment: \"Backend API\"",
+                  "            })",
+                  "        }",
+                  "    }).then(function (response) {",
+                  "        pm.test(\"Severity '\" + severity + \"' is accepted with 201\", function () {",
+                  "            pm.expect(response.code).to.eql(201);",
+                  "        });",
+                  "        pm.test(\"Defect created with severity '\" + severity + \"'\", function () {",
+                  "            pm.expect(response.json().severity).to.eql(severity);",
+                  "        });",
+                  "        createdIds[severity] = response.json().id;",
+                  "    });",
+                  "};",
+                  "",
+                  "// Chain the requests so the collection variable is stored after the last one.",
+                  "createOne(severities[0])",
+                  "    .then(function () { return createOne(severities[1]); })",
+                  "    .then(function () { return createOne(severities[2]); })",
+                  "    .then(function () { return createOne(severities[3]); })",
+                  "    .then(function () {",
+                  "        pm.collectionVariables.set(\"severityIssueIds\", JSON.stringify(createdIds));",
+                  "        pm.test(\"Every supported severity was created\", function () {",
+                  "            pm.expect(Object.keys(createdIds)).to.have.members(severities);",
+                  "        });",
+                  "    });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Severity sweep - Critical defect example\",\n  \"description\": \"Created by the Postman severity sweep request.\",\n  \"severity\": \"Critical\",\n  \"status\": \"Open\",\n  \"category\": \"API\",\n  \"environment\": \"Backend API\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/issues",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "issues"
+              ]
+            },
+            "description": "POST /issues for every severity value (Low, Medium, High, Critical). The request itself sends the Critical payload; the test script additionally creates and verifies one defect per severity and stores their ids in `severityIssueIds`."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "3. Validation (negative)",
+      "description": "Input validation and negative scenarios that must return 422 with a consistent error body.",
+      "item": [
+        {
+          "name": "04 - Create a defect with missing required fields",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test(\"Error response follows the documented contract\", function () {",
+                  "    pm.expect(body).to.have.property(\"error\");",
+                  "    pm.expect(body.error.type).to.eql(\"validation_error\");",
+                  "    pm.expect(body.error.message).to.be.a(\"string\");",
+                  "    pm.expect(body.error.details).to.be.an(\"array\").that.is.not.empty;",
+                  "});",
+                  "",
+                  "pm.test(\"Every required field is reported as missing\", function () {",
+                  "    const fields = body.error.details.map(function (item) { return item.field; });",
+                  "    [\"title\", \"severity\", \"status\", \"category\", \"environment\"].forEach(function (field) {",
+                  "        pm.expect(fields).to.include(field);",
+                  "    });",
+                  "});",
+                  "",
+                  "pm.test(\"No stack trace or internals leak into the response\", function () {",
+                  "    pm.expect(pm.response.text().toLowerCase()).to.not.include(\"traceback\");",
+                  "    pm.expect(pm.response.text().toLowerCase()).to.not.include(\"sqlalchemy\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"Only the optional field is provided.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/issues",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "issues"
+              ]
+            },
+            "description": "POST /issues with an empty payload (only the optional description) - expects 422 and a field level error list."
+          },
+          "response": []
+        },
+        {
+          "name": "05 - Create a defect with an invalid severity",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test(\"Severity is reported as an invalid value\", function () {",
+                  "    pm.expect(body.error.type).to.eql(\"validation_error\");",
+                  "    const details = body.error.details;",
+                  "    pm.expect(details.some(function (item) { return item.field === \"severity\"; })).to.be.true;",
+                  "});",
+                  "",
+                  "pm.test(\"No defect is created with an invalid severity\", function () {",
+                  "    pm.expect(body).to.not.have.property(\"id\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Invalid severity defect\",\n  \"description\": \"Severity must be Low, Medium, High or Critical.\",\n  \"severity\": \"Blocker\",\n  \"status\": \"Open\",\n  \"category\": \"API\",\n  \"environment\": \"Web\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/issues",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "issues"
+              ]
+            },
+            "description": "POST /issues with severity \"Blocker\" - not one of Low, Medium, High, Critical."
+          },
+          "response": []
+        },
+        {
+          "name": "06 - Create a defect with a title shorter than 3 characters",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test(\"Title length violation is reported\", function () {",
+                  "    pm.expect(body.error.type).to.eql(\"validation_error\");",
+                  "    const details = body.error.details;",
+                  "    pm.expect(details.some(function (item) { return item.field === \"title\"; })).to.be.true;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"ab\",\n  \"severity\": \"Low\",\n  \"status\": \"Open\",\n  \"category\": \"UI\",\n  \"environment\": \"Web\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/issues",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "issues"
+              ]
+            },
+            "description": "Boundary-value test: a 2 character title must be rejected (minimum is 3)."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "4. Read Defects",
+      "description": "Retrieval scenarios: collection, single record and a missing record.",
+      "item": [
+        {
+          "name": "07 - Retrieve all defects",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test(\"Pagination metadata is present\", function () {",
+                  "    pm.expect(body).to.have.all.keys(\"total\", \"page\", \"page_size\", \"pages\", \"items\");",
+                  "    pm.expect(body.total).to.be.a(\"number\");",
+                  "    pm.expect(body.items).to.be.an(\"array\");",
+                  "});",
+                  "",
+                  "pm.test(\"At least one defect exists (run this after the create requests)\", function () {",
+                  "    pm.expect(body.total).to.be.at.least(1);",
+                  "    pm.expect(body.items.length).to.be.at.least(1);",
+                  "});",
+                  "",
+                  "pm.test(\"Every item has the documented fields\", function () {",
+                  "    const expected = [\"id\", \"title\", \"description\", \"severity\", \"status\", \"category\", \"environment\", \"created_at\", \"updated_at\"];",
+                  "    body.items.forEach(function (item) {",
+                  "        pm.expect(Object.keys(item)).to.have.members(expected);",
+                  "    });",
+                  "});",
+                  "",
+                  "pm.test(\"Timestamps are ISO-8601 in UTC\", function () {",
+                  "    body.items.forEach(function (item) {",
+                  "        pm.expect(item.created_at).to.match(/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}/);",
+                  "        pm.expect(item.updated_at).to.match(/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}/);",
+                  "    });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/issues?page=1&page_size=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "issues"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "page_size",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "GET /issues - paginated list of defects."
+          },
+          "response": []
+        },
+        {
+          "name": "08 - Retrieve a defect by ID",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Allows this request to be sent on its own (without running the create request first).",
+                  "if (!pm.collectionVariables.get(\"issueId\")) {",
+                  "    pm.sendRequest({",
+                  "        url: pm.collectionVariables.get(\"baseUrl\") + \"/issues\",",
+                  "        method: \"POST\",",
+                  "        header: { \"Content-Type\": \"application/json\" },",
+                  "        body: {",
+                  "            mode: \"raw\",",
+                  "            raw: JSON.stringify({",
+                  "                title: \"Seeded defect for standalone requests\",",
+                  "                description: \"Created by the pre-request script of request 08.\",",
+                  "                severity: \"Low\",",
+                  "                status: \"Open\",",
+                  "                category: \"API\",",
+                  "                environment: \"Web\"",
+                  "            })",
+                  "        }",
+                  "    }, function (error, response) {",
+                  "        if (!error && response.code === 201) {",
+                  "            pm.collectionVariables.set(\"issueId\", response.json().id);",
+                  "        }",
+                  "    });",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const body = pm.response.json();",
+                  "const expectedId = Number(pm.collectionVariables.get(\"issueId\"));",
+                  "",
+                  "pm.test(\"The requested defect is returned\", function () {",
+                  "    pm.expect(body.id).to.eql(expectedId);",
+                  "});",
+                  "",
+                  "pm.test(\"The response matches the stored record\", function () {",
+                  "    pm.expect(body.title).to.be.a(\"string\").and.to.have.length.within(3, 200);",
+                  "    pm.expect([\"Low\", \"Medium\", \"High\", \"Critical\"]).to.include(body.severity);",
+                  "    pm.expect([\"Open\", \"In Progress\", \"Closed\"]).to.include(body.status);",
+                  "}) ;"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/issues/{{issueId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "issues",
+                "{{issueId}}"
+              ]
+            },
+            "description": "GET /issues/{id} using the id captured from the create request."
+          },
+          "response": []
+        },
+        {
+          "name": "09 - Retrieve a nonexistent defect",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "pm.test(\"Response content type is JSON\", function () {",
+                  "    pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"application/json\");",
+                  "});",
+                  "",
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test(\"Not found error follows the documented contract\", function () {",
+                  "    pm.expect(body.error.type).to.eql(\"not_found\");",
+                  "    pm.expect(body.error.message).to.include(\"999999\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/issues/999999",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "issues",
+                "999999"
+              ]
+            },
+            "description": "GET /issues/999999 - a deliberately unused id (not a hardcoded production record)."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "5. Update & Delete",
+      "description": "Partial update, invalid update and deletion scenarios. These requests reuse the id captured by request 02.",
+      "item": [
+        {
+          "name": "10 - Update a defect status",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const body = pm.response.json();",
+                  "const issueId = pm.collectionVariables.get(\"issueId\");",
+                  "",
+                  "pm.test(\"The status was updated\", function () {",
+                  "    pm.expect(body.status).to.eql(\"In Progress\");",
+                  "});",
+                  "",
+                  "pm.test(\"Other fields are unchanged\", function () {",
+                  "    pm.expect(body.severity).to.be.a(\"string\");",
+                  "    pm.expect(body.created_at).to.be.a(\"string\");",
+                  "    pm.expect(body.title).to.be.a(\"string\");",
+                  "});",
+                  "console.log(\"Updated defect \" + issueId);",
+                  "",
+                  "// Independent verification: read the record back and check that the change persisted.",
+                  "pm.sendRequest({",
+                  "    url: pm.collectionVariables.get(\"baseUrl\") + \"/issues/\" + issueId,",
+                  "    method: \"GET\"",
+                  "}).then(function (response) {",
+                  "    pm.test(\"The update is persisted (verified with a follow-up GET)\", function () {",
+                  "        pm.expect(response.code).to.eql(200);",
+                  "        pm.expect(response.json().status).to.eql(\"In Progress\");",
+                  "    });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"In Progress\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/issues/{{issueId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "issues",
+                "{{issueId}}"
+              ]
+            },
+            "description": "PATCH /issues/{id} - partial update of the status field only."
+          },
+          "response": []
+        },
+        {
+          "name": "11 - Update a defect with invalid data",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 422\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});",
+                  "",
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test(\"The invalid update is rejected with field details\", function () {",
+                  "    pm.expect(body.error.type).to.eql(\"validation_error\");",
+                  "    pm.expect(body.error.details).to.be.an(\"array\").that.is.not.empty;",
+                  "});",
+                  "",
+                  "// The rejected update must not change the stored record.",
+                  "pm.sendRequest({",
+                  "    url: pm.collectionVariables.get(\"baseUrl\") + \"/issues/\" + pm.collectionVariables.get(\"issueId\"),",
+                  "    method: \"GET\"",
+                  "}).then(function (response) {",
+                  "    pm.test(\"The stored defect is unchanged after the failed update\", function () {",
+                  "        pm.expect(response.code).to.eql(200);",
+                  "        pm.expect([\"Low\", \"Medium\", \"High\", \"Critical\"]).to.include(response.json().severity);",
+                  "    });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"severity\": \"Blocker\",\n  \"title\": \"ab\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/issues/{{issueId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "issues",
+                "{{issueId}}"
+              ]
+            },
+            "description": "PATCH /issues/{id} with an unsupported severity and a too-short title - both must be rejected."
+          },
+          "response": []
+        },
+        {
+          "name": "12 - Delete a defect",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Standalone safety: deleting a nonexistent id would return 404 instead of 204.",
+                  "if (!pm.collectionVariables.get(\"issueId\")) {",
+                  "    pm.sendRequest({",
+                  "        url: pm.collectionVariables.get(\"baseUrl\") + \"/issues\",",
+                  "        method: \"POST\",",
+                  "        header: { \"Content-Type\": \"application/json\" },",
+                  "        body: {",
+                  "            mode: \"raw\",",
+                  "            raw: JSON.stringify({",
+                  "                title: \"Temporary defect for deletion test\",",
+                  "                severity: \"Medium\",",
+                  "                status: \"Open\",",
+                  "                category: \"API\",",
+                  "                environment: \"Web\"",
+                  "            })",
+                  "        }",
+                  "    }, function (error, response) {",
+                  "        if (!error && response.code === 201) {",
+                  "            pm.collectionVariables.set(\"issueId\", response.json().id);",
+                  "        }",
+                  "    });",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 204\", function () {",
+                  "    pm.response.to.have.status(204);",
+                  "});",
+                  "",
+                  "pm.test(\"The response body is empty\", function () {",
+                  "    pm.expect(pm.response.text()).to.be.empty;",
+                  "});",
+                  "",
+                  "// Remember which id was deleted so request 13 can verify it is gone.",
+                  "pm.collectionVariables.set(\"deletedIssueId\", pm.collectionVariables.get(\"issueId\"));",
+                  "console.log(\"Deleted issueId = \" + pm.collectionVariables.get(\"deletedIssueId\"));",
+                  "",
+                  "// Free the issueId variable: the next create request must capture a fresh id.",
+                  "pm.collectionVariables.set(\"issueId\", \"\");"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/issues/{{issueId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "issues",
+                "{{issueId}}"
+              ]
+            },
+            "description": "DELETE /issues/{id} - expects 204 with an empty body. The deleted id is stored in `deletedIssueId`."
+          },
+          "response": []
+        },
+        {
+          "name": "13 - Retrieve a deleted defect",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// When this request is sent on its own, use an id that cannot exist.",
+                  "if (!pm.collectionVariables.get(\"deletedIssueId\")) {",
+                  "    pm.collectionVariables.set(\"deletedIssueId\", \"999999\");",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 404\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test(\"The deleted defect no longer exists\", function () {",
+                  "    pm.expect(body.error.type).to.eql(\"not_found\");",
+                  "    pm.expect(body.error.message).to.include(pm.collectionVariables.get(\"deletedIssueId\"));",
+                  "});",
+                  "",
+                  "pm.collectionVariables.set(\"deletedIssueId\", \"\");"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/issues/{{deletedIssueId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "issues",
+                "{{deletedIssueId}}"
+              ]
+            },
+            "description": "GET /issues/{id} for the id deleted by request 12 - must return 404 (data-consistency check)."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "6. Filter, Pagination & Statistics",
+      "description": "Query parameters, sorting, pagination boundaries and the aggregated statistics endpoint.",
+      "item": [
+        {
+          "name": "14 - Filter defects by severity and status",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test(\"Pagination metadata is present\", function () {",
+                  "    pm.expect(body).to.have.property(\"total\");",
+                  "    pm.expect(body.items).to.be.an(\"array\");",
+                  "});",
+                  "",
+                  "pm.test(\"Only defects matching the filter are returned\", function () {",
+                  "    body.items.forEach(function (item) {",
+                  "        pm.expect(item.severity).to.eql(\"Critical\");",
+                  "        pm.expect(item.status).to.eql(\"Open\");",
+                  "    });",
+                  "});",
+                  "",
+                  "pm.test(\"The reported total matches the filtered result set\", function () {",
+                  "    pm.expect(body.total).to.be.a(\"number\");",
+                  "});",
+                  "",
+                  "// Negative filter: an unmatched severity must return an empty page.",
+                  "pm.sendRequest({",
+                  "    url: pm.collectionVariables.get(\"baseUrl\") + \"/issues?severity=Critical&status=Closed&search=no-such-defect-xyz\",",
+                  "    method: \"GET\"",
+                  "}).then(function (response) {",
+                  "    pm.test(\"An unmatched filter returns an empty page\", function () {",
+                  "        pm.expect(response.code).to.eql(200);",
+                  "        pm.expect(response.json().total).to.eql(0);",
+                  "        pm.expect(response.json().items).to.be.an(\"array\").that.is.empty;",
+                  "    });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/issues?severity=Critical&status=Open&page=1&page_size=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "issues"
+              ],
+              "query": [
+                {
+                  "key": "severity",
+                  "value": "Critical"
+                },
+                {
+                  "key": "status",
+                  "value": "Open"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "page_size",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "GET /issues filtered by severity and status (created by request 03)."
+          },
+          "response": []
+        },
+        {
+          "name": "15 - Test pagination and sorting",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test(\"Page metadata reflects the request\", function () {",
+                  "    pm.expect(body.page).to.eql(1);",
+                  "    pm.expect(body.page_size).to.eql(2);",
+                  "});",
+                  "",
+                  "pm.test(\"The page never contains more items than the page size\", function () {",
+                  "    pm.expect(body.items.length).to.be.at.most(2);",
+                  "});",
+                  "",
+                  "pm.test(\"Items are sorted by id descending\", function () {",
+                  "    const ids = body.items.map(function (item) { return item.id; });",
+                  "    const sorted = ids.slice().sort(function (a, b) { return b - a; });",
+                  "    pm.expect(ids).to.eql(sorted);",
+                  "});",
+                  "",
+                  "// Second page must not repeat records from the first page.",
+                  "pm.sendRequest({",
+                  "    url: pm.collectionVariables.get(\"baseUrl\") + \"/issues?page=2&page_size=2&sort_by=id&order=desc\",",
+                  "    method: \"GET\"",
+                  "}).then(function (response) {",
+                  "    pm.test(\"Page 2 returns a different, non-overlapping set\", function () {",
+                  "        pm.expect(response.code).to.eql(200);",
+                  "        const firstIds = body.items.map(function (item) { return item.id; });",
+                  "        const secondIds = response.json().items.map(function (item) { return item.id; });",
+                  "        secondIds.forEach(function (id) {",
+                  "            pm.expect(firstIds).to.not.include(id);",
+                  "        });",
+                  "    });",
+                  "});",
+                  "",
+                  "// Boundary check: an out-of-range page size must be rejected.",
+                  "pm.sendRequest({",
+                  "    url: pm.collectionVariables.get(\"baseUrl\") + \"/issues?page_size=1000\",",
+                  "    method: \"GET\"",
+                  "}).then(function (response) {",
+                  "    pm.test(\"page_size above the maximum returns 422\", function () {",
+                  "        pm.expect(response.code).to.eql(422);",
+                  "    });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/issues?page=1&page_size=2&sort_by=id&order=desc",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "issues"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "page_size",
+                  "value": "2"
+                },
+                {
+                  "key": "sort_by",
+                  "value": "id"
+                },
+                {
+                  "key": "order",
+                  "value": "desc"
+                }
+              ]
+            },
+            "description": "GET /issues with pagination, sorting and boundary checks."
+          },
+          "response": []
+        },
+        {
+          "name": "16 - Retrieve defect statistics",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "const body = pm.response.json();",
+                  "",
+                  "pm.test(\"Statistics contain all documented buckets\", function () {",
+                  "    pm.expect(Object.keys(body)).to.have.members([\"total\", \"by_status\", \"by_severity\"]);",
+                  "    pm.expect(Object.keys(body.by_status)).to.have.members([\"Open\", \"In Progress\", \"Closed\"]);",
+                  "    pm.expect(Object.keys(body.by_severity)).to.have.members([\"Low\", \"Medium\", \"High\", \"Critical\"]);",
+                  "});",
+                  "",
+                  "pm.test(\"Status counts add up to the total\", function () {",
+                  "    const sum = body.by_status.Open + body.by_status[\"In Progress\"] + body.by_status.Closed;",
+                  "    pm.expect(sum).to.eql(body.total);",
+                  "});",
+                  "",
+                  "pm.test(\"Severity counts add up to the total\", function () {",
+                  "    const sum = body.by_severity.Low + body.by_severity.Medium + body.by_severity.High + body.by_severity.Critical;",
+                  "    pm.expect(sum).to.eql(body.total);",
+                  "});",
+                  "",
+                  "pm.test(\"All counts are non-negative numbers\", function () {",
+                  "    pm.expect(body.total).to.be.at.least(0);",
+                  "    Object.values(body.by_status).forEach(function (value) { pm.expect(value).to.be.at.least(0); });",
+                  "    Object.values(body.by_severity).forEach(function (value) { pm.expect(value).to.be.at.least(0); });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/issues/stats",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "issues",
+                "stats"
+              ]
+            },
+            "description": "GET /issues/stats - counts grouped by status and severity."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

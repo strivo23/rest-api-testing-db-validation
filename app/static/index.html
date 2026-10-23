@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Defect Tracker Dashboard</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <h1>Defect Tracker Dashboard</h1>
+    <p class="subtitle">
+      Lightweight UI on top of the REST API. Swagger docs:
+      <a href="/docs" target="_blank" rel="noopener">/docs</a>
+    </p>
+  </header>
+
+  <main>
+    <section class="card" id="stats-section">
+      <h2>Statistics <button id="refresh" class="secondary">Refresh</button></h2>
+      <div class="stats-grid">
+        <div class="stat">
+          <span class="stat-label">Total</span>
+          <span class="stat-value" id="stat-total">-</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Open</span>
+          <span class="stat-value" id="stat-open">-</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">In Progress</span>
+          <span class="stat-value" id="stat-in-progress">-</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Closed</span>
+          <span class="stat-value" id="stat-closed">-</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Critical</span>
+          <span class="stat-value" id="stat-critical">-</span>
+        </div>
+      </div>
+      <p class="buckets" id="severity-buckets"></p>
+    </section>
+
+    <section class="card">
+      <h2>Report a defect</h2>
+      <form id="issue-form">
+        <label>Title *<input type="text" name="title" required minlength="3" maxlength="200" value="Checkout button does nothing" /></label>
+        <label>Description<textarea name="description" rows="2" maxlength="2000">Reported from the dashboard.</textarea></label>
+        <div class="row">
+          <label>Severity *
+            <select name="severity" required>
+              <option>Low</option><option>Medium</option><option selected>High</option><option>Critical</option>
+            </select>
+          </label>
+          <label>Status *
+            <select name="status" required>
+              <option selected>Open</option><option>In Progress</option><option>Closed</option>
+            </select>
+          </label>
+        </div>
+        <div class="row">
+          <label>Category *
+            <select name="category" required>
+              <option selected>Functional</option><option>UI</option><option>API</option><option>Performance</option><option>Security</option>
+            </select>
+          </label>
+          <label>Environment *
+            <select name="environment" required>
+              <option selected>Web</option><option>Android</option><option>iOS</option><option>Linux</option><option>Backend API</option>
+            </select>
+          </label>
+        </div>
+        <button type="submit">Create defect</button>
+      </form>
+      <p class="message" id="form-message"></p>
+    </section>
+
+    <section class="card">
+      <h2>Defects</h2>
+      <div class="filters">
+        <label>Severity
+          <select id="filter-severity">
+            <option value="">All</option><option>Low</option><option>Medium</option><option>High</option><option>Critical</option>
+          </select>
+        </label>
+        <label>Status
+          <select id="filter-status">
+            <option value="">All</option><option>Open</option><option>In Progress</option><option>Closed</option>
+          </select>
+        </label>
+        <label>Sort by
+          <select id="filter-sort">
+            <option value="created_at:desc">Newest first</option>
+            <option value="created_at:asc">Oldest first</option>
+            <option value="id:desc">Highest id</option>
+            <option value="title:asc">Title A-Z</option>
+            <option value="severity:asc">Severity</option>
+          </select>
+        </label>
+        <label>Page size
+          <select id="filter-page-size">
+            <option>5</option><option selected>10</option><option>20</option>
+          </select>
+        </label>
+      </div>
+
+      <table id="issues-table">
+        <thead>
+          <tr>
+            <th>ID</th><th>Title</th><th>Severity</th><th>Status</th>
+            <th>Category</th><th>Environment</th><th>Updated (UTC)</th><th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="issues-body"></tbody>
+      </table>
+
+      <div class="pagination">
+        <button id="prev-page" class="secondary">Previous</button>
+        <span id="page-info">Page 1</span>
+        <button id="next-page" class="secondary">Next</button>
+      </div>
+      <p class="message" id="table-message"></p>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
