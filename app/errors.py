@@ -20,6 +20,12 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 logger = logging.getLogger("app.errors")
 
+# Pydantic reports the location of a validation error as a tuple whose first
+# element is where the value came from ("body", "query", "path", ...). That
+# prefix is dropped so that ``error.details[].field`` always names the offending
+# parameter itself (for example "title" or "page") regardless of the location.
+_REQUEST_LOCATIONS = frozenset({"body", "query", "path", "header", "cookie"})
+
 
 class APIError(Exception):
     """Application level error carrying an HTTP status code."""
@@ -64,7 +70,9 @@ def register_exception_handlers(app: FastAPI) -> None:
     async def _handle_validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
         details = [
             {
-                "field": ".".join(str(part) for part in error.get("loc", ()) if part != "body"),
+                "field": ".".join(
+                    str(part) for part in error.get("loc", ()) if part not in _REQUEST_LOCATIONS
+                ),
                 "message": error.get("msg", "invalid value"),
                 "type": error.get("type", "value_error"),
             }

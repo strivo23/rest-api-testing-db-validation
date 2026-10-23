@@ -120,21 +120,6 @@ class IssueListResponse(BaseModel):
     items: list[IssueRead]
 
 
-class SeverityCounts(BaseModel):
-    Low: int = 0
-    Medium: int = 0
-    High: int = 0
-    Critical: int = 0
-
-
-class StatusCounts(BaseModel):
-    Open: int = 0
-    InProgress: int = Field(default=0, alias="In Progress")
-    Closed: int = 0
-
-    model_config = ConfigDict(populate_by_name=True)
-
-
 class StatsResponse(BaseModel):
     """Aggregated defect counts."""
 
