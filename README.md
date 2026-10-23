@@ -1,132 +1,105 @@
 # REST API Testing & Database Validation Platform
 
-A production-style **defect-tracking REST API** built with **Python, FastAPI, SQLAlchemy 2.x and PostgreSQL**, shipped together with the complete QA toolchain around it: an importable **Postman API test collection**, an **automated pytest suite with coverage**, **SQL validation scripts**, and full **test documentation** (test plan, 84 test cases, defect report template, database validation workflow, test execution report).
+A small defect-tracking REST API written with FastAPI, SQLAlchemy and PostgreSQL, plus the
+testing assets that go around it: a pytest suite, a Postman collection with assertions, SQL
+validation queries, and written test documentation.
 
-The project was built to demonstrate practical software-testing skills: API functional and negative testing, boundary-value analysis, database validation through SQL rather than trusting API responses, data-consistency checks, integration testing and automated regression testing.
+The point of the project is not the API itself. It is the testing workflow: write tests from a
+specification, exercise the API over HTTP, and then check with SQL that the database really
+contains what the API claimed it stored.
 
-<!-- Badges are static and reflect the properties recorded in
-     test-documentation/test-execution-report.md (last local run: 2026-10-23).
-     The "tests" and "coverage" shields are snapshots of that run, not a live CI status. -->
+<!-- Badges are static snapshots of the last local run recorded in
+     test-documentation/test-execution-report.md (2026-10-23). They are not a live CI status. -->
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.161-009688)
-![SQLAlchemy](https://img.shields.io/badge/SQLAlchemy-2.x-red)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-14%2B-336791)
-![Pydantic](https://img.shields.io/badge/Pydantic-v2-e92063)
-![Tests](https://img.shields.io/badge/tests-103%20passed-brightgreen)
+![Tests](https://img.shields.io/badge/tests-115%20passed-brightgreen)
 ![Coverage](https://img.shields.io/badge/coverage-91%25-yellowgreen)
-![License](https://img.shields.io/badge/license-not%20specified-lightgrey)
 
 ---
 
-## Table of contents
+## 1. What this project is
 
-1. [Overview and problem statement](#1-overview-and-problem-statement)
-2. [Key features](#2-key-features)
-3. [Technology stack](#3-technology-stack)
-4. [Architecture](#4-architecture)
-5. [API request lifecycle (worked example)](#5-api-request-lifecycle-worked-example)
-6. [API endpoints](#6-api-endpoints)
-7. [Project structure](#7-project-structure)
-8. [Prerequisites](#8-prerequisites)
-9. [Installation and setup (Windows)](#9-installation-and-setup-windows)
-10. [PostgreSQL configuration and database initialisation](#10-postgresql-configuration-and-database-initialisation)
-11. [Environment variables](#11-environment-variables)
-12. [Starting the application](#12-starting-the-application)
-13. [API usage examples](#13-api-usage-examples)
-14. [Postman collection](#14-postman-collection)
-15. [Automated tests and coverage](#15-automated-tests-and-coverage)
-16. [Testing strategy](#16-testing-strategy)
-17. [Test results](#17-test-results)
-18. [SQL database validation](#18-sql-database-validation)
-19. [Security notes](#19-security-notes)
-20. [Limitations and future enhancements](#20-limitations-and-future-enhancements)
-21. [Portfolio summary and GitHub topics](#21-portfolio-summary-and-github-topics)
-22. [License](#22-license)
+It is a defect tracker. You can file a defect, read it back, change its status, delete it, and
+ask for counts grouped by status and severity.
 
----
+| Field | Allowed values |
+| --- | --- |
+| `title` | required, 3-200 characters after trimming |
+| `description` | optional, up to 2000 characters |
+| `severity` | `Low`, `Medium`, `High`, `Critical` |
+| `status` | `Open`, `In Progress`, `Closed` |
+| `category` | `Functional`, `UI`, `API`, `Performance`, `Security` |
+| `environment` | `Web`, `Android`, `iOS`, `Linux`, `Backend API` |
 
-## 1. Overview and problem statement
+Every write is validated twice: once by Pydantic at the API boundary, and again by `CHECK`
+constraints in the database. That duplication is deliberate - see
+[PROJECT_NOTES.md](PROJECT_NOTES.md).
 
-**Problem.** Testers need a realistic system under test on which they can demonstrate the full QA workflow: deriving test cases from a written specification, exercising an HTTP API, then verifying with **SQL** that the database actually stored what the API claimed - and proving that invalid input is rejected at more than one layer. A defect tracker is the natural domain, because it is exactly the kind of tool a QA engineer uses daily.
+**Why a defect tracker?** Because it is the tool a tester actually uses, and it gives you
+something concrete to test: required fields, enums, a workflow that changes over time, filters,
+pagination and aggregates you can verify with SQL. It is also small enough to read end to end.
 
-**What this project is.** A REST API that stores and manages software defect records. Testers can file a defect, search and filter defects, change workflow status, delete them, and read aggregated statistics. Every write is validated **twice**: by Pydantic at the API boundary and by `CHECK` constraints in the database.
+### Current status
 
-**Objectives**
+| Part | State |
+| --- | --- |
+| API implementation | Working |
+| pytest suite (SQLite) | 115 passed, 5 skipped |
+| Postman / Newman collection | 21 requests, 69 assertions, 0 failures |
+| PostgreSQL integration tests | Written, **not run here** - no PostgreSQL server in this environment |
+| PostgreSQL SQL validation queries | Written, **not run here** - same reason |
 
-1. Provide a documented API under test with clear contracts and predictable error responses.
-2. Prove data correctness at the **database** level, not only from API responses.
-3. Demonstrate a layered test approach: functional, negative, boundary-value, data-consistency, integration and regression testing.
-4. Provide reusable API test assets: a Postman collection with assertions and variable chaining, plus SQL validation scripts.
-5. Show safe engineering practice: environment-based configuration, no hardcoded credentials, no internal details leaked in error responses, and fully isolated automated tests.
+The two PostgreSQL items are the honest gap in this project. They are scripted and ready; they
+just need a machine with PostgreSQL installed. Nothing in this README claims they passed.
 
-**Intended users:** QA/test engineers, backend developers and reviewers who want to run the suite and the collection and inspect the real results.
+## 2. Technology stack, and why each piece is there
 
-## 2. Key features
+| Technology | Why it is used here |
+| --- | --- |
+| **Python 3.11+** | One language for the service, the tests and the SQL tooling. |
+| **FastAPI** | Gives request parsing, dependency injection and an OpenAPI schema for free, so the API contract is documented without writing a second document by hand. Its `TestClient` lets the pytest suite call the real app in-process. |
+| **Pydantic v2** | The first line of validation. Enum membership, string lengths and the "don't send an empty PATCH" rule live here, and the error format is normalised into one JSON shape. |
+| **SQLAlchemy 2.x** | Typed models (`Mapped[...]`) plus `select()` expressions. Also the reason the same code runs against SQLite in tests and PostgreSQL in production. |
+| **PostgreSQL** | The real target: `timestamptz`, native `CHECK` constraints, indexes. Chosen because a tester should validate against the database that will actually be used. |
+| **psycopg2-binary** | The driver behind `postgresql+psycopg2://` URLs. |
+| **pydantic-settings** | Reads configuration from environment variables or `.env` into one typed object, so no connection string is hardcoded. |
+| **pytest + pytest-cov** | The regression suite and its coverage report. The suite runs on in-memory SQLite so it needs no server. |
+| **Postman / Newman** | Where the API-side assertions live: status codes, content types, field presence, and the fact that a rejected update leaves the record alone. Newman runs the same collection headlessly. |
+| **SQL** | The part that makes this a *validation* project: queries that check the stored rows directly instead of trusting the API response. |
+| **Uvicorn** | Runs the ASGI app. |
+| **HTML/CSS/JS** | A small optional dashboard at `/dashboard/`. No build step. |
 
-- Full CRUD for defect records, including **partial updates** via `PATCH`.
-- Filtering by `severity`, `status`, `category`, `environment` and free-text `search`.
-- Sorting on 8 columns in both directions, with a deterministic `id` tie-breaker so pagination never repeats or skips a row.
-- Pagination with a hard cap (`page_size <= 100`) and page metadata.
-- Aggregated statistics grouped by status and severity, always including **zero buckets**.
-- Consistent JSON error contract for `404`, `405`, `422`, `500` (and `503` on `/health`).
-- Health endpoint reporting live database connectivity.
-- UTC timestamps everywhere (`created_at`, `updated_at`), stored as `timestamptz` in PostgreSQL.
-- Database-level `CHECK` constraints and **six indexes** on the hot filter columns.
-- Isolated automated test setup: a fresh in-memory SQLite database per test; a separate opt-in PostgreSQL integration suite.
-- Optional zero-build HTML/CSS/JS dashboard at `/dashboard/`.
+Nothing else is used. There is no Dockerfile, no migration tool and no CI beyond the pytest
+workflow in `.github/workflows/tests.yml`.
 
-## 3. Technology stack
+## 3. Architecture
 
-| Technology | Version | Purpose in this project |
-| --- | --- | --- |
-| **Python** | 3.11+ (verified on 3.12.9) | Implementation language for the API, tests and tooling |
-| **FastAPI** | 0.161.1 | Web framework: routing, dependency injection, request parsing, automatic OpenAPI generation |
-| **Starlette** | 1.9.0 | ASGI toolkit underlying FastAPI (routing + `TestClient`) |
-| **Uvicorn** | 0.54.0 | ASGI server used to run the application |
-| **PostgreSQL** | 14+ | Target database: `timestamptz`, `CHECK` constraints, indexes |
-| **psycopg2-binary** | 2.9.13 | PostgreSQL driver used by SQLAlchemy (`postgresql+psycopg2://`) |
-| **SQLAlchemy** | 2.1.6 | ORM + SQL toolkit: typed `Mapped` models, sessions, parameterised queries |
-| **Pydantic** | 2.14.1 | Request validation and response serialisation (enums, length rules, custom validators) |
-| **pydantic-settings** | 2.16.1 | Loads configuration from environment variables / `.env` into a typed settings object |
-| **python-dotenv** | 1.x | Enables reading the local `.env` file (used through pydantic-settings) |
-| **pytest** | 9.1.1 | Automated test framework |
-| **pytest-cov** | 7.1.0 | Coverage measurement and reporting |
-| **httpx** | 0.28.1 | HTTP client underneath FastAPI's `TestClient` |
-| **Postman / Newman** | desktop app / Node.js CLI | API test collection authoring and headless execution |
-| **SQL** | PostgreSQL dialect (SQLite for tests) | Manual database validation: constraints, aggregates, consistency checks |
-| **Git** | - | Version control |
-| **Markdown + OpenAPI/Swagger** | - | Documentation: this README, test docs, and auto-generated `/docs` |
-| **HTML/CSS/JS** | - | Optional dashboard served at `/dashboard/` (no build step) |
-| **venv + pip** | - | Virtual environment and dependency management |
-
-## 4. Architecture
-
-Layered design - the routing layer contains no SQL, and the data-access layer raises no HTTP errors.
+The routing layer contains no SQL, and `app/crud.py` never raises HTTP errors. That split is
+what makes the CRUD functions testable on their own.
 
 ```mermaid
 flowchart TB
-    subgraph Clients["Clients / test tools"]
-        PM["Postman collection"]
+    subgraph Clients["Callers"]
+        PM["Postman / Newman"]
         PT["pytest + FastAPI TestClient"]
-        BR["Browser dashboard /dashboard/"]
+        BR["Optional dashboard at /dashboard/"]
     end
 
-    subgraph App["FastAPI application (app/main.py)"]
-        MW["CORSMiddleware + lifespan<br/>exception handlers (app/errors.py)"]
-        subgraph Routers["Routes (app/routes/)"]
-            R1["health.py - GET /health"]
-            R2["stats.py - GET /issues/stats"]
-            R3["issues.py - POST/GET/PATCH/DELETE /issues"]
-        end
-        SCH["Pydantic schemas (app/schemas.py)<br/>IssueCreate / IssueUpdate / IssueRead"]
-        CRUD["CRUD + business logic (app/crud.py)<br/>filters, sort, pagination, aggregates"]
-        ORM["SQLAlchemy models (app/models.py)<br/>Issue, CHECK constraints, indexes"]
-        DB["Engine + session (app/database.py)<br/>get_db() dependency, SessionLocal"]
-        CFG["Settings (app/config.py)<br/>DATABASE_URL from .env"]
+    subgraph App["FastAPI app (app/main.py)"]
+        MW["CORS middleware<br/>lifespan<br/>exception handlers (app/errors.py)"]
+        R1["routes/health.py<br/>GET /health"]
+        R2["routes/stats.py<br/>GET /issues/stats"]
+        R3["routes/issues.py<br/>POST / GET / PATCH / DELETE"]
+        SCH["schemas.py<br/>Pydantic validation and serialisation"]
+        CRUD["crud.py<br/>filters, sorting, pagination, aggregates"]
+        ORM["models.py<br/>Issue + CHECK constraints + indexes"]
+        DB["database.py<br/>engine, SessionLocal, get_db()"]
+        CFG["config.py<br/>settings from .env"]
     end
 
-    PG[("PostgreSQL - issues table<br/>CHECK constraints + 6 indexes")]
-    SQL["SQL scripts: sql/schema.sql,<br/>sql/validation_queries.sql"]
+    PG[("PostgreSQL<br/>issues table")]
+    SQL["sql/schema.sql<br/>sql/validation_queries.sql"]
 
     PM --> MW
     PT --> MW
@@ -142,70 +115,45 @@ flowchart TB
     ORM --> DB
     DB --> PG
     CFG -.-> DB
-    SQL -.->|manual validation| PG
+    SQL -.->|manual verification| PG
 ```
 
-The `stats` router is registered **before** the `issues` router so that `/issues/stats` is not captured by `/issues/{issue_id}`; a dedicated test asserts this ordering.
+Two details worth knowing:
 
-## 5. API request lifecycle (worked example)
+- `routes/stats.py` is registered **before** `routes/issues.py` in
+  [main.py](app/main.py).
+  If it were not, `/issues/stats` would be matched by `/issues/{issue_id}` and the API would
+  answer `422` instead of the statistics. There is a test for this.
+- `GET /issues` sorts by the requested column and then appends `id` as a tie-breaker, so two
+  rows with the same `created_at` cannot swap places between pages.
 
-Trace of `POST /issues`:
-
-1. **Uvicorn** accepts the HTTP request and passes it to the FastAPI application.
-2. Middleware and the registered **exception handlers** (`app/errors.py`) wrap the call.
-3. The **issues router** matches `POST /issues` and receives a database session through `Depends(get_db)`.
-4. **Pydantic** validates the body against `IssueCreate`: required fields, enum membership, title length 3-200, description length, whitespace trimming.
-5. On failure, the `RequestValidationError` handler returns **422** with `error.type = "validation_error"` and a field-level `details` list.
-6. `crud.create_issue()` inserts the row through SQLAlchemy (parameterised SQL, committed transaction).
-7. The database **`CHECK` constraints** act as the second line of defence; a violation surfaces as a safe **500 `database_error`** with no SQL text in the response.
-8. The row is serialised with `IssueRead` (timestamps normalised to UTC) and returned as **201**.
-
-## 6. API endpoints
+## 4. API endpoints
 
 Base URL: `http://127.0.0.1:8000`
 
 | Method | Path | Success | Purpose |
 | --- | --- | --- | --- |
-| GET | `/health` | 200 / 503 | API status and database connectivity |
+| GET | `/health` | 200, or 503 when the database is unreachable | Liveness plus a real `SELECT 1` |
 | POST | `/issues` | 201 | Create a defect |
-| GET | `/issues` | 200 | List defects (filter, sort, paginate) |
-| GET | `/issues/{id}` | 200 | Retrieve a single defect |
-| PATCH | `/issues/{id}` | 200 | Partially update a defect |
+| GET | `/issues` | 200 | List defects with filters, sorting and pagination |
+| GET | `/issues/{id}` | 200 | Read one defect |
+| PATCH | `/issues/{id}` | 200 | Update only the fields that were sent |
 | DELETE | `/issues/{id}` | 204 | Delete a defect |
-| GET | `/issues/stats` | 200 | Counts grouped by status and severity |
-| GET | `/` | 200 | Root discovery document (not in the OpenAPI schema) |
+| GET | `/issues/stats` | 200 | Counts by status and severity, including empty buckets |
+| GET | `/` | 200 | Discovery document (excluded from the OpenAPI schema) |
 
-### Defect fields
+Query parameters of `GET /issues`:
 
-| Field | Type | Rules |
+| Parameter | Default | Notes |
 | --- | --- | --- |
-| `id` | integer | generated, read-only |
-| `title` | string | required, 3-200 characters after trimming |
-| `description` | string or null | optional, max 2000 characters |
-| `severity` | enum | `Low`, `Medium`, `High`, `Critical` |
-| `status` | enum | `Open`, `In Progress`, `Closed` |
-| `category` | enum | `Functional`, `UI`, `API`, `Performance`, `Security` |
-| `environment` | enum | `Web`, `Android`, `iOS`, `Linux`, `Backend API` |
-| `created_at` | datetime | UTC, set on creation |
-| `updated_at` | datetime | UTC, refreshed on every update |
+| `severity`, `status`, `category`, `environment` | - | exact match on the enum value |
+| `search` | - | case-insensitive match in `title` or `description`, max 200 characters |
+| `page` | `1` | must be >= 1 |
+| `page_size` | `20` | must be between 1 and 100 |
+| `sort_by` | `created_at` | `id`, `title`, `severity`, `status`, `category`, `environment`, `created_at`, `updated_at` |
+| `order` | `desc` | `asc` or `desc` |
 
-### Query parameters of `GET /issues`
-
-| Parameter | Type | Default | Notes |
-| --- | --- | --- | --- |
-| `severity` | enum | - | exact match |
-| `status` | enum | - | exact match |
-| `category` | enum | - | exact match |
-| `environment` | enum | - | exact match |
-| `search` | string | - | case-insensitive match in title or description |
-| `page` | integer >= 1 | 1 | page number |
-| `page_size` | integer 1-100 | 20 | records per page (values > 100 are rejected with 422) |
-| `sort_by` | enum | `created_at` | `id`, `title`, `severity`, `status`, `category`, `environment`, `created_at`, `updated_at` |
-| `order` | `asc` / `desc` | `desc` | sort direction |
-
-### Error contract
-
-Every failing request returns the same shape - never a stack trace, SQL statement or credential:
+Errors always use the same shape, so a test only has to check one format:
 
 ```json
 {
@@ -221,201 +169,22 @@ Every failing request returns the same shape - never a stack trace, SQL statemen
 
 | Status | `error.type` | When |
 | --- | --- | --- |
-| 404 | `not_found` / `http_error` | unknown id, or unknown route |
+| 404 | `not_found`, or `http_error` for an unknown route | unknown id |
 | 405 | `http_error` | method not allowed |
-| 422 | `validation_error` | invalid body or query parameters |
-| 500 | `database_error` | database failure while processing |
-| 500 | `internal_error` | unexpected error (fallback handler) |
-| 503 | - | `/health` when the database is unreachable |
+| 422 | `validation_error` | invalid body or query parameter |
+| 500 | `database_error` | the database failed while handling the request |
+| 500 | `internal_error` | anything unexpected |
+| 503 | not applicable | `/health` when the database does not answer; returns the health payload with `status: "degraded"` |
 
-## 7. Project structure
+`error.details[].field` is always the plain parameter name - `title` for a body field, `page`
+for a query parameter. No stack trace, SQL text or credential is ever returned to the client.
 
-```text
-rest-api-testing-db-validation/
-├── app/
-│   ├── __init__.py             # package marker, __version__ = "1.0.0"
-│   ├── main.py                 # FastAPI app, lifespan, CORS, router registration, static mount
-│   ├── config.py               # settings from environment variables (.env)
-│   ├── database.py             # engine, session factory, Base, get_db dependency
-│   ├── models.py               # SQLAlchemy models, enums, CHECK constraints, indexes
-│   ├── schemas.py              # Pydantic request/response schemas and validators
-│   ├── crud.py                 # data access and business logic
-│   ├── errors.py               # APIError + global exception handlers (error contract)
-│   ├── db_init.py              # schema initialisation CLI (python -m app.db_init)
-│   ├── routes/
-│   │   ├── __init__.py
-│   │   ├── health.py           # GET /health
-│   │   ├── issues.py           # /issues CRUD
-│   │   └── stats.py            # GET /issues/stats
-│   └── static/                 # optional dashboard (index.html, styles.css, app.js)
-├── tests/
-│   ├── conftest.py             # isolated in-memory SQLite fixtures + TestClient
-│   ├── test_health.py          # 4 tests
-│   ├── test_issues.py          # 91 tests
-│   ├── test_stats.py           # 5 tests
-│   ├── test_errors.py          # 3 tests
-│   └── integration/
-│       └── test_postgres_integration.py   # 5 tests (opt-in, skipped by default)
-├── postman/
-│   └── REST_API_Testing.postman_collection.json   # 16 requests / 6 folders
-├── sql/
-│   ├── schema.sql              # PostgreSQL DDL, constraints, indexes, updated_at trigger
-│   └── validation_queries.sql  # 17 read-only validation queries
-├── test-documentation/
-│   ├── test-plan.md
-│   ├── test-cases.csv          # 84 cases
-│   ├── defect-report-template.md
-│   ├── database-validation.md
-│   └── test-execution-report.md
-├── .github/workflows/tests.yml # CI: runs pytest + coverage on push / PR
-├── .env.example                # placeholder configuration only
-├── .gitignore
-├── CONTRIBUTING.md
-├── PROJECT_TECHNICAL_REPORT.md # detailed technical report
-├── pytest.ini
-├── requirements.txt
-└── README.md
-```
+## 5. Creating and retrieving a defect
 
-## 8. Prerequisites
-
-| Requirement | Notes |
-| --- | --- |
-| Python 3.11 or newer | check with `python --version` |
-| pip | shipped with Python |
-| PostgreSQL 14+ | required to run against the real database |
-| Postman desktop, or Node.js + Newman | only to run the Postman collection |
-| Git | optional, for version control |
-
-**Supported environments:** Windows 10/11 (primary, PowerShell) and Linux/macOS. The automated unit/API suite needs **no database server** - it uses in-memory SQLite. PostgreSQL is only required for the application database and the opt-in integration tests.
-
-## 9. Installation and setup (Windows)
+Start the API (section 8), then:
 
 ```powershell
-cd "c:\Users\Chandrakanth Reddy Y\Desktop\rest-api-testing-db-validation"
-
-# 1. Create and activate a virtual environment
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-
-# If script execution is blocked by policy, either run:
-#   Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass ; .\.venv\Scripts\Activate.ps1
-# or simply call the interpreter directly, for example: .\.venv\Scripts\python.exe -m pytest
-
-# 2. Install dependencies
-python -m pip install --upgrade pip
-pip install -r requirements.txt
-
-# 3. Create your local environment file from the template
-copy .env.example .env
-# then edit .env and set DATABASE_URL (see section 11)
-```
-
-## 10. PostgreSQL configuration and database initialisation
-
-### 10.1 Install PostgreSQL locally
-
-1. Download the installer from <https://www.postgresql.org/download/windows/> (EDB installer).
-2. Run it, keep the default port `5432` and set a password for the `postgres` superuser.
-3. Add the PostgreSQL `bin` folder to `PATH` (for example `C:\Program Files\PostgreSQL\16\bin`) so `psql` works.
-4. Verify: `psql --version`
-
-### 10.2 Create the databases
-
-```powershell
-psql -U postgres
-```
-
-```sql
-CREATE DATABASE defect_tracker WITH ENCODING 'UTF8';
-CREATE DATABASE defect_tracker_test WITH ENCODING 'UTF8';   -- used by the integration tests
-\l
-\q
-```
-
-| Database | Used by | Purpose |
-| --- | --- | --- |
-| `defect_tracker` | the application | real defect data |
-| `defect_tracker_test` | `tests/integration` | a separate test database |
-
-The integration suite **refuses to run** unless the database name ends with `_test`, so development data cannot be wiped by accident. The unit/API suite never uses PostgreSQL at all.
-
-### 10.3 Initialise the schema (pick one)
-
-**Option A - SQLAlchemy metadata (recommended; creates indexes and constraints too):**
-
-```powershell
-python -m app.db_init
-# INFO Creating tables on postgresql+psycopg2://postgres:***@localhost:5432/defect_tracker
-# INFO Tables available: issues
-```
-
-**Option B - raw SQL script (also installs a trigger that maintains `updated_at` for manual updates):**
-
-```powershell
-psql -U postgres -d defect_tracker -f sql/schema.sql
-```
-
-Verify the structure:
-
-```powershell
-psql -U postgres -d defect_tracker -c "\d issues"
-```
-
-## 11. Environment variables
-
-Copy `.env.example` to `.env` and fill in real local values. `.env` is git-ignored; only placeholders live in the repository.
-
-| Variable | Default | Description |
-| --- | --- | --- |
-| `DATABASE_URL` | `postgresql+psycopg2://postgres:<your_password>@localhost:5432/defect_tracker` | SQLAlchemy connection string |
-| `DB_ECHO` | `false` | `true` logs every SQL statement |
-| `DB_POOL_SIZE` | `5` | Connection pool size (PostgreSQL only) |
-| `DB_MAX_OVERFLOW` | `10` | Extra connections allowed beyond the pool |
-| `CORS_ORIGINS` | `*` | Comma-separated allowed origins |
-| `AUTO_CREATE_TABLES` | `false` | Create missing tables on start-up |
-| `TEST_DATABASE_URL` | empty | PostgreSQL test database for the integration suite |
-
-Example `.env`:
-
-```env
-DATABASE_URL=postgresql+psycopg2://postgres:your_password@localhost:5432/defect_tracker
-DB_ECHO=false
-AUTO_CREATE_TABLES=false
-TEST_DATABASE_URL=postgresql+psycopg2://postgres:your_password@localhost:5432/defect_tracker_test
-```
-
-> **Quick look without PostgreSQL:** set `DATABASE_URL=sqlite:///./local.db` and `AUTO_CREATE_TABLES=true`. This is also how the live verification in section 17 was performed.
-
-## 12. Starting the application
-
-```powershell
-# Development (auto-reload)
-uvicorn app.main:app --reload
-
-# Explicit host and port
-uvicorn app.main:app --host 127.0.0.1 --port 8000
-```
-
-| URL | Purpose |
-| --- | --- |
-| <http://127.0.0.1:8000/> | discovery document with links |
-| <http://127.0.0.1:8000/health> | health check |
-| <http://127.0.0.1:8000/docs> | **Swagger UI** |
-| <http://127.0.0.1:8000/redoc> | **ReDoc** |
-| <http://127.0.0.1:8000/openapi.json> | raw OpenAPI schema |
-| <http://127.0.0.1:8000/dashboard/> | optional HTML dashboard |
-
-If PostgreSQL is not running you will receive `503` from `/health` and `500 database_error`
-from `/issues` - that is the designed safe-failure behaviour, not a crash.
-
-## 13. API usage examples
-
-Responses below were captured from the running application (structure is real; ids and timestamps differ per run).
-
-**Create a defect**
-
-```powershell
+# Create
 Invoke-RestMethod -Uri http://127.0.0.1:8000/issues -Method Post -ContentType 'application/json' -Body '{
   "title": "Login button unresponsive on Android 13",
   "description": "Tapping the Log in button does not submit the form.",
@@ -440,368 +209,468 @@ Invoke-RestMethod -Uri http://127.0.0.1:8000/issues -Method Post -ContentType 'a
 }
 ```
 
-**Validation failure** (422)
+```powershell
+# Read it back
+Invoke-RestMethod -Uri http://127.0.0.1:8000/issues/1
 
-```json
-{
-  "error": {
-    "type": "validation_error",
-    "message": "Request validation failed",
-    "details": [
-      { "field": "severity", "message": "Input should be 'Low', 'Medium', 'High' or 'Critical'", "type": "enum" },
-      { "field": "title", "message": "String should have at least 3 characters", "type": "string_too_short" }
-    ]
-  }
-}
+# Change only the status; every other field must survive
+Invoke-RestMethod -Uri http://127.0.0.1:8000/issues/1 -Method Patch -ContentType 'application/json' -Body '{"status": "In Progress"}'
+
+# Delete, then confirm it is gone
+Invoke-RestMethod -Uri http://127.0.0.1:8000/issues/1 -Method Delete
+Invoke-RestMethod -Uri http://127.0.0.1:8000/issues/1    # 404, error.type = "not_found"
 ```
 
-**List, filter, sort, paginate**
+The last two calls are the ones that matter for testing: a `204` only proves the API *said* it
+deleted the row. Section 11 shows how to confirm it with SQL.
 
-```http
-GET /issues?severity=Critical&status=Open&page=1&page_size=20&sort_by=id&order=desc
-```
-
-```json
-{
-  "total": 1,
-  "page": 1,
-  "page_size": 20,
-  "pages": 1,
-  "items": [
-    {
-      "id": 4,
-      "title": "Severity sweep - Critical defect example",
-      "description": "Created by the Postman severity sweep.",
-      "severity": "Critical",
-      "status": "Open",
-      "category": "API",
-      "environment": "Backend API",
-      "created_at": "2026-10-23T05:02:11.128004Z",
-      "updated_at": "2026-10-23T05:02:11.128004Z"
-    }
-  ]
-}
-```
-
-**Partial update**
-
-```http
-PATCH /issues/1
-{"status": "In Progress"}
-```
-
-```json
-{
-  "id": 1,
-  "title": "Login button unresponsive on Android 13",
-  "severity": "High",
-  "status": "In Progress",
-  "created_at": "2026-10-23T04:25:30.666261Z",
-  "updated_at": "2026-10-23T04:25:30.711037Z"
-}
-```
-
-**Statistics**
-
-```http
-GET /issues/stats
-```
-
-```json
-{
-  "total": 1,
-  "by_status": { "Open": 0, "In Progress": 1, "Closed": 0 },
-  "by_severity": { "Low": 0, "Medium": 0, "High": 1, "Critical": 0 }
-}
-```
-
-**Delete and verify**
+## 6. Project structure
 
 ```text
-DELETE /issues/1   ->  204 No Content (empty body)
-GET    /issues/1   ->  404 Not Found
-{ "error": { "type": "not_found", "message": "Issue with id 1 was not found" } }
+rest-api-testing-db-validation/
+├── app/
+│   ├── main.py            # FastAPI app, lifespan, CORS, router order, static mount
+│   ├── config.py          # typed settings loaded from the environment / .env
+│   ├── database.py        # engine, SessionLocal, Base, get_db() dependency
+│   ├── models.py          # Issue model, enum values, CHECK constraints, indexes
+│   ├── schemas.py         # Pydantic request/response models and validators
+│   ├── crud.py            # data access: filters, sorting, pagination, aggregates
+│   ├── errors.py          # APIError and the global exception handlers
+│   ├── db_init.py         # python -m app.db_init creates the tables
+│   ├── routes/
+│   │   ├── health.py      # GET /health
+│   │   ├── issues.py      # /issues CRUD
+│   │   └── stats.py       # GET /issues/stats
+│   └── static/            # optional dashboard (index.html, styles.css, app.js)
+├── tests/
+│   ├── conftest.py        # in-memory SQLite fixtures + TestClient
+│   ├── test_health.py     # 4 tests
+│   ├── test_issues.py     # 103 tests
+│   ├── test_stats.py      # 5 tests
+│   ├── test_errors.py     # 3 tests
+│   └── integration/
+│       └── test_postgres_integration.py   # 5 tests, skipped unless TEST_DATABASE_URL is set
+├── postman/
+│   └── REST_API_Testing.postman_collection.json   # 16 requests in 6 folders
+├── sql/
+│   ├── schema.sql             # PostgreSQL DDL: constraints, indexes, updated_at trigger
+│   └── validation_queries.sql # 17 numbered validation checks
+├── test-documentation/
+│   ├── test-plan.md
+│   ├── test-cases.csv         # 84 test cases
+│   ├── defect-report-template.md
+│   ├── database-validation.md
+│   └── test-execution-report.md
+├── .github/workflows/tests.yml   # runs pytest + coverage on push and pull request
+├── .env.example               # placeholders only
+├── CONTRIBUTING.md
+├── PROJECT_NOTES.md           # design decisions, limitations, next steps
+├── PROJECT_TECHNICAL_REPORT.md
+├── pytest.ini
+└── requirements.txt
 ```
 
-## 14. Postman collection
+## 7. Setup on Windows
 
-**File:** [`postman/REST_API_Testing.postman_collection.json`](postman/REST_API_Testing.postman_collection.json)
-**Collection name:** *REST API Testing & Database Validation*
-**Schema:** Postman Collection v2.1.0
-**Collection variable:** `baseUrl` = `http://127.0.0.1:8000`
+```powershell
+# 1. Get the code and enter it
+git clone https://github.com/strivo23/rest-api-testing-db-validation.git
+cd rest-api-testing-db-validation
+
+# 2. Virtual environment
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+
+# If the execution policy blocks the activation script, use one of these instead:
+#   Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass ; .\.venv\Scripts\Activate.ps1
+#   .\.venv\Scripts\python.exe -m pytest        (call the interpreter directly, no activation)
+
+# 3. Dependencies
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+
+# 4. Local configuration
+copy .env.example .env
+# then edit .env and set DATABASE_URL (section 8)
+```
+
+The pytest suite needs no database server - it creates its own in-memory SQLite database - so
+you can run it immediately after step 3.
+
+## 8. PostgreSQL configuration
+
+### 8.1 Install and create the databases
+
+1. Install the EDB build from <https://www.postgresql.org/download/windows/>, keeping the
+   default port `5432`.
+2. Add the `bin` directory to `PATH` (for example `C:\Program Files\PostgreSQL\16\bin`) so
+   `psql` is usable, then check it with `psql --version`.
+3. Create one database for the application and one for the integration tests:
+
+```powershell
+psql -U postgres
+```
+
+```sql
+CREATE DATABASE defect_tracker      WITH ENCODING 'UTF8';
+CREATE DATABASE defect_tracker_test WITH ENCODING 'UTF8';
+\q
+```
+
+### 8.2 Why there are two databases
+
+The integration suite in `tests/integration/` **drops and recreates** the tables it uses. To make
+that safe it refuses to start unless the database name ends with `_test`:
+
+```python
+if not TEST_DATABASE_URL.rsplit("/", 1)[-1].split("?")[0].endswith("_test"):
+    pytest.skip("Refusing to run integration tests against a non *_test database")
+```
+
+That check exists so a typo in `TEST_DATABASE_URL` cannot wipe your development data. The
+unit/API suite never uses PostgreSQL at all - each test gets a fresh in-memory SQLite database
+and a fixture asserts the dialect really is SQLite.
+
+### 8.3 Create the schema
+
+Either of these produces the same structure:
+
+```powershell
+# Option A - SQLAlchemy metadata (recommended)
+python -m app.db_init
+# INFO Creating tables on postgresql+psycopg2://postgres:***@localhost:5432/defect_tracker
+# INFO Tables available: issues
+
+# Option B - raw SQL, which also installs the updated_at trigger
+psql -U postgres -d defect_tracker -f sql/schema.sql
+```
+
+`sql/schema.sql` and `app/models.py` declare the same five `CHECK` constraints and the same six
+indexes under the same names; keeping them in step is a documented convention, not something the
+code enforces. Check the result with `psql -U postgres -d defect_tracker -c "\d issues"`.
+
+### 8.4 Environment variables
+
+`.env` is git-ignored. Only placeholders live in `.env.example`.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `DATABASE_URL` | `postgresql+psycopg2://postgres:<your_password>@localhost:5432/defect_tracker` | SQLAlchemy connection string |
+| `DB_ECHO` | `false` | `true` logs every SQL statement |
+| `DB_POOL_SIZE` | `5` | Connection pool size (PostgreSQL only) |
+| `DB_MAX_OVERFLOW` | `10` | Extra connections allowed above the pool |
+| `CORS_ORIGINS` | `*` | Comma-separated allowed origins |
+| `AUTO_CREATE_TABLES` | `false` | Create missing tables at start-up |
+| `TEST_DATABASE_URL` | empty | Test database for `tests/integration/`; when empty, those tests skip |
+
+```env
+DATABASE_URL=postgresql+psycopg2://postgres:your_password@localhost:5432/defect_tracker
+DB_ECHO=false
+AUTO_CREATE_TABLES=false
+TEST_DATABASE_URL=postgresql+psycopg2://postgres:your_password@localhost:5432/defect_tracker_test
+```
+
+**No PostgreSQL available?** You can still exercise the whole API. Point it at a throwaway
+SQLite file - this is exactly how the live checks in
+[test-execution-report.md](test-documentation/test-execution-report.md) were done:
+
+```powershell
+$env:DATABASE_URL="sqlite:///./local.db" ; $env:AUTO_CREATE_TABLES="true"
+```
+
+Delete `local.db` afterwards. It is already in `.gitignore`.
+
+## 9. Running the API
+
+```powershell
+uvicorn app.main:app --reload                 # development
+uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+| URL | What it is |
+| --- | --- |
+| <http://127.0.0.1:8000/> | discovery document with links |
+| <http://127.0.0.1:8000/health> | health check |
+| <http://127.0.0.1:8000/docs> | Swagger UI |
+| <http://127.0.0.1:8000/redoc> | ReDoc |
+| <http://127.0.0.1:8000/openapi.json> | raw OpenAPI schema |
+| <http://127.0.0.1:8000/dashboard/> | optional dashboard |
+
+If PostgreSQL is down, `/health` answers `503` and `/issues` answers `500` with
+`error.type = "database_error"`. That is the intended behaviour, not a crash.
+
+## 10. Postman collection
+
+File: [postman/REST_API_Testing.postman_collection.json](postman/REST_API_Testing.postman_collection.json)
+(collection name *REST API Testing & Database Validation*, schema v2.1.0)
 
 ### Import and run
 
-1. Start the API: `uvicorn app.main:app`.
-2. In Postman: **Collections** > **Import** > select the file above.
-3. Open the collection, go to the **Variables** tab, confirm `baseUrl` points at your running server.
-4. Run the whole collection with **Run** (Collection Runner) in the default order, or send requests individually.
-   Order matters for the Update/Delete requests because the id created by request 02 is reused; requests 08 and 12 create their own defect when `issueId` is empty, so they also work standalone.
-5. Review the **Test Results** tab: 16 requests with assertions on status codes, content types, response fields, validation errors and behaviour.
+1. Start the API on `http://127.0.0.1:8000`.
+2. In Postman: **Collections > Import** and pick the file.
+3. Check the collection variable `baseUrl` in the **Variables** tab.
+4. Run the whole collection with the **Collection Runner**, or send requests one at a time.
 
-### Run with Newman (headless)
+### Run headlessly with Newman
 
 ```powershell
 npm install -g newman
 newman run postman/REST_API_Testing.postman_collection.json
 ```
 
-Chaining uses collection variables (`issueId`, `severityIssueIds`, `deletedIssueId`) - **no request depends on a hardcoded database id**.
+### How the chaining works
 
-Coverage of the 16 requests:
+No request contains a hardcoded database id. Ids are captured from responses into collection
+variables and reused:
+
+| Variable | Set by | Used by |
+| --- | --- | --- |
+| `baseUrl` | collection definition | every request |
+| `issueId` | `02 - Create a valid defect` | requests 08, 10, 11, 12 |
+| `severityIssueIds` | `03 - Create a defect with every supported severity` | the severity sweep assertions |
+| `deletedIssueId` | `12 - Delete a defect` | `13 - Retrieve a deleted defect` |
+
+Requests 08 and 12 create their own defect in a pre-request script when `issueId` is empty, so
+they also work when you send them on their own. The other requests in folder 5 assume request 02
+ran first - that is the one ordering dependency in the collection, and it is stated in the
+collection description.
+
+### What the 16 requests assert
 
 | # | Request | Asserts |
 | --- | --- | --- |
-| 01 | Health check | 200, JSON content type, `status=ok`, database connected |
-| 02 | Create a valid defect | 201, generated id, echoed fields, UTC timestamps; captures `issueId` |
-| 03 | Create a defect with every supported severity | one defect per severity; ids stored in `severityIssueIds` |
-| 04 | Create with missing required fields | 422, all required fields listed, no internals leaked |
-| 05 | Create with an invalid severity | 422, severity reported |
-| 06 | Create with a title shorter than 3 characters | 422, title reported |
-| 07 | Retrieve all defects | 200, pagination metadata, item schema, ISO-8601 UTC timestamps |
-| 08 | Retrieve a defect by ID | 200, id match, value domains |
-| 09 | Retrieve a nonexistent defect | 404, `error.type=not_found` |
-| 10 | Update a defect status | 200, status updated, other fields intact, follow-up GET proves persistence |
-| 11 | Update with invalid data | 422, follow-up GET proves the record is unchanged |
-| 12 | Delete a defect | 204, empty body, id remembered as `deletedIssueId` |
-| 13 | Retrieve a deleted defect | 404, `not_found` |
-| 14 | Filter by severity and status | 200, every item matches; negative filter returns total 0 |
-| 15 | Pagination and sorting | page metadata, page size respected, descending ids, non-overlapping page 2, `page_size=1000` -> 422 |
-| 16 | Retrieve defect statistics | all buckets present; status and severity sums equal the total |
+| 01 | Health check | `200`, JSON content type, `status = ok`, database connected |
+| 02 | Create a valid defect | `201`, generated id, fields echoed back, UTC timestamps; captures `issueId` |
+| 03 | Create with every severity | one defect per severity, all `201`, ids stored in `severityIssueIds` |
+| 04 | Create with missing required fields | `422`, every required field listed, no internals leaked |
+| 05 | Create with an invalid severity | `422`, `severity` reported in the details |
+| 06 | Create with a 2-character title | `422`, `title` reported (boundary: minimum is 3) |
+| 07 | Retrieve all defects | `200`, pagination metadata, item schema, ISO-8601 UTC timestamps |
+| 08 | Retrieve a defect by id | `200`, id matches, values inside the documented domains |
+| 09 | Retrieve a nonexistent defect | `404`, `error.type = not_found` |
+| 10 | Update a defect status | `200`, status changed, other fields intact; a follow-up `GET` proves it persisted |
+| 11 | Update with invalid data | `422`, and a follow-up `GET` proves the record was not modified |
+| 12 | Delete a defect | `204`, empty body; the id is remembered in `deletedIssueId` |
+| 13 | Retrieve a deleted defect | `404`, `not_found` |
+| 14 | Filter by severity and status | every returned item matches; an unmatched filter returns `total = 0` |
+| 15 | Pagination and sorting | page metadata, page size respected, ids descending, page 2 does not overlap page 1, `page_size=1000` returns `422` |
+| 16 | Statistics | all buckets present, status and severity sums equal the total |
 
-## 15. Automated tests and coverage
+Last recorded run (2026-10-23, Newman against the live server): **21 requests, 16 test scripts,
+19 pre-request scripts, 69 assertions, 0 failures**. See
+[test-execution-report.md](test-documentation/test-execution-report.md) section 4.
 
-### Commands
-
-```powershell
-pytest -v                                             # full suite, verbose
-pytest -q                                             # quiet
-pytest tests/test_issues.py -v                        # one file
-pytest -k "validation" -v                             # by keyword
-pytest --cov=app --cov-report=term-missing            # coverage in the terminal
-pytest --cov=app --cov-report=html                    # HTML report in htmlcov/index.html
-pytest tests/integration -v -m integration            # PostgreSQL integration tests (opt-in)
-```
-
-### Test layout
-
-| Path | Focus | Tests |
-| --- | --- | --- |
-| `tests/conftest.py` | fixtures: in-memory SQLite engine per test, session, `TestClient` with dependency override, payload factories | - |
-| [`tests/test_health.py`](tests/test_health.py) | health, root, OpenAPI schema, degraded database | 4 |
-| [`tests/test_issues.py`](tests/test_issues.py) | CRUD, validation, boundaries, filters, sorting, pagination, SQL constraints, indexes | 91 |
-| [`tests/test_stats.py`](tests/test_stats.py) | statistics accuracy and consistency after update/delete | 5 |
-| [`tests/test_errors.py`](tests/test_errors.py) | global error contract, database failure, 404/405 | 3 |
-| [`tests/integration/test_postgres_integration.py`](tests/integration/test_postgres_integration.py) | real PostgreSQL behaviour (skipped unless `TEST_DATABASE_URL` is set) | 5 |
-| **Total collected** | | **108** |
-
-### Isolation guarantees
-
-- Every test gets a **fresh in-memory SQLite database** which is dropped afterwards.
-- The API dependency is overridden, and the fixture **asserts** the API is bound to SQLite - tests cannot touch a real database.
-- The integration suite refuses to run unless the database name ends with `_test`.
-
-A GitHub Actions workflow ([`.github/workflows/tests.yml`](.github/workflows/tests.yml)) runs the suite and coverage on every push and pull request. It needs no secrets and no external services, because the unit/API suite uses SQLite.
-
-## 16. Testing strategy
-
-| Test type | What it verifies | Where it lives |
-| --- | --- | --- |
-| **Positive / functional** | valid create, read, update, delete; correct status codes and response bodies | `tests/test_issues.py`, Postman requests 02, 03, 07, 08, 10, 12 |
-| **Negative** | missing required fields, invalid enum values, wrong types, unknown routes, method-not-allowed | `tests/test_issues.py`, `tests/test_errors.py`, Postman 04, 05, 09, 11 |
-| **Boundary value** | title length 2/3/200/201; description 2001; `page=0`; `page_size=0/100/101/1000` | `tests/test_issues.py`, Postman 06, 15 |
-| **Validation** | all four enums, case sensitivity, whitespace trimming, empty PATCH body | `tests/test_issues.py`, Postman 05, 06, 11 |
-| **CRUD / API contract** | request/response schema, content types, error contract shape | Postman assertions across all 16 requests |
-| **Database consistency** | rows actually stored/updated/deleted (verified with SQL, not the API); constraint enforcement; index existence | `tests/test_issues.py`, `tests/integration/`, `sql/validation_queries.sql` |
-| **Integration** | real PostgreSQL: `timestamptz`, native `CHECK` violations, `updated_at` after PATCH | `tests/integration/test_postgres_integration.py` (opt-in) |
-| **Regression** | deterministic re-runnable suite covering the whole API surface | the full pytest suite |
-
-The guiding principle: **API testing alone is not sufficient.** A `201` response only proves the API *said* it stored the data; the SQL checks prove the row exists with the correct values.
-
-## 17. Test results
-
-**Execution date:** 2026-10-23 · **Environment:** Windows 11, PowerShell 5.1, Python 3.12.9 in `.venv`
-
-| Item | Value |
-| --- | --- |
-| FastAPI / Starlette / Uvicorn | 0.161.1 / 1.9.0 / 0.54.0 |
-| SQLAlchemy / Pydantic / psycopg2-binary | 2.1.6 / 2.14.1 / 2.9.13 |
-| pytest / pytest-cov | 9.1.1 / 7.1.0 |
-| Application database | PostgreSQL 14+ (required); not installed in the recording environment |
-| Database used for the recorded run | in-memory SQLite (pytest) and a throwaway SQLite file (live server check) |
-
-### Automated suite
+## 11. pytest and coverage
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest --cov=app --cov-report=term-missing -q
+pytest -v
+pytest -q
+pytest tests/test_issues.py -v
+pytest -k "validation" -v
+pytest --cov=app --cov-report=term-missing
+pytest --cov=app --cov-report=html            # writes htmlcov/index.html
+
+# PostgreSQL integration tests (opt-in, needs a *_test database)
+$env:TEST_DATABASE_URL="postgresql+psycopg2://postgres:<password>@localhost:5432/defect_tracker_test"
+pytest tests/integration -v -m integration
 ```
+
+### Latest result
 
 ```text
-103 passed, 5 skipped, 1 warning in 2.96s
-
-Name                     Stmts   Miss  Cover   Missing
-------------------------------------------------------
-app\__init__.py              1      0   100%
-app\config.py               22      0   100%
-app\crud.py                 61      1    98%   99
-app\database.py             27      8    70%   31, 45-52
-app\db_init.py              15     15     0%   11-34
-app\errors.py               40      2    95%   101-102
-app\main.py                 33      3    91%   33-35
-app\models.py               48      0   100%
-app\routes\__init__.py       2      0   100%
-app\routes\health.py        18      0   100%
-app\routes\issues.py        34      0   100%
-app\routes\stats.py          9      0   100%
-app\schemas.py             102      8    92%   45, 68, 71, 77-80, 110
-------------------------------------------------------
-TOTAL                      412     37    91%
+115 passed, 5 skipped in ~4s
+TOTAL coverage: 91% (403 statements, 35 missed)
 ```
 
-| Metric | Value |
-| --- | --- |
-| Tests collected / executed | 108 / 103 |
-| Passed | **103** |
-| Failed | **0** |
-| Skipped | 5 (PostgreSQL integration tests - `TEST_DATABASE_URL` not configured) |
-| Warnings | 1 (upstream Starlette deprecation notice about the `httpx` TestClient shim; not project code) |
-| Coverage of `app/` | **91%** (37 statements uncovered, each explained in the execution report) |
+The skipped tests are the five PostgreSQL integration tests, which require `TEST_DATABASE_URL`.
+No test is skipped to make the build green.
 
-Uncovered lines are all intentional: the `db_init` CLI wrapper, the PostgreSQL pool branch, the optional `AUTO_CREATE_TABLES` startup branch, defensive schema branches, and the deliberately hard-to-trigger generic exception handler.
-
-### Postman collection (recorded with Newman against the live server)
-
-| Metric | Value |
-| --- | --- |
-| Requests executed / failed | 21 / **0** |
-| Assertions executed / failed | 69 / **0** |
-| Test scripts executed / failed | 16 / **0** |
-| Pre-request scripts executed / failed | 19 / **0** |
-| Run duration | ~1.39 s |
-
-### Live server verification
-
-`GET /health` -> `200 {"status":"ok","database":"connected","dialect":"sqlite","version":"1.0.0"}`; `POST /issues` -> `201` with a generated id; `PATCH /issues/1` -> `200` with a newer `updated_at`; `GET /issues/stats` -> correct buckets; `DELETE /issues/1` -> `204` empty body; `GET /issues/1` afterwards -> `404 not_found`; `GET /docs`, `/redoc`, `/openapi.json` and `/dashboard/` all -> `200`.
-
-### Not executed here
-
-| Item | Status | Command to complete it |
+| File | Focus | Tests |
 | --- | --- | --- |
-| 5 PostgreSQL integration tests | **Skipped / pending** - no PostgreSQL server available | set `TEST_DATABASE_URL` to a `*_test` database, then `pytest tests/integration -v -m integration` |
-| PostgreSQL SQL validation queries | **Pending** - same reason | `psql -U postgres -d defect_tracker -f sql/validation_queries.sql` |
-| Load / performance / security testing | **Not performed** - out of scope | - |
+| `tests/test_health.py` | health, root, OpenAPI schema, degraded database | 4 |
+| `tests/test_issues.py` | CRUD, validation, boundaries, filters, sorting, pagination, raw SQL checks | 103 |
+| `tests/test_stats.py` | statistics accuracy, consistency after update and delete | 5 |
+| `tests/test_errors.py` | error contract, database failure, 404 and 405 | 3 |
+| `tests/integration/test_postgres_integration.py` | real PostgreSQL behaviour | 5 (skipped by default) |
 
-Full details, including the exit-criteria assessment, are in [`test-documentation/test-execution-report.md`](test-documentation/test-execution-report.md).
+**What the suite covers beyond the happy path**
 
-## 18. SQL database validation
+- *Negative*: missing required fields, invalid enum values, wrong data types, unknown ids, an
+  unknown route, a method that is not allowed, and an empty PATCH body.
+- *Boundary*: title of 2 / 3 / 200 / 201 characters, description of 2000 / 2001, `page = 0`,
+  `page_size` of 0 / 1 / 100 / 101 / 1000, a page number past the last page, and `search` at
+  200 / 201 characters.
+- *Persistence and non-mutation*: a successful PATCH is re-read with SQL; a rejected PATCH is
+  followed by a `GET` that proves the record is byte-for-byte unchanged; a rejected POST leaves
+  the row count at 0.
+- *Database-level*: raw `INSERT` statements that bypass the API are still rejected by the
+  `CHECK` constraints and `NOT NULL`, and the six expected indexes are present.
+- *Contract*: `error.details[].field` names the offending parameter for both body and query
+  errors.
 
-**Scripts:** [`sql/schema.sql`](sql/schema.sql) (schema) and [`sql/validation_queries.sql`](sql/validation_queries.sql) (17 validation queries).
+**Isolation.** Each test builds a fresh in-memory SQLite database with `StaticPool` and drops it
+afterwards. The `client` fixture overrides `get_db` and then asserts
+`db_session.get_bind().dialect.name == "sqlite"`, so a misconfigured run fails loudly instead of
+touching a real database.
+
+### SQLite vs PostgreSQL
+
+| | SQLite unit/API suite | PostgreSQL integration suite |
+| --- | --- | --- |
+| Location | `tests/` (excluding `tests/integration/`) | `tests/integration/` |
+| Runs by default | Yes | No - skipped unless `TEST_DATABASE_URL` is set |
+| Database | In-memory, one per test | A real database whose name ends with `_test` |
+| Verifies | HTTP behaviour, validation, error contract, filtering, pagination, aggregates, and `CHECK` constraints enforced by SQLite | `timestamptz` round-tripping with a real UTC offset, native PostgreSQL constraint violations, and `updated_at` changing on PATCH |
+
+The two suites are kept apart on purpose. SQLite is the default test runner in CI, but it does
+not behave exactly like PostgreSQL, so anything storage-specific is checked in the integration
+suite instead of being assumed.
+
+## 12. SQL validation queries
+
+Queries live in [sql/validation_queries.sql](sql/validation_queries.sql) and are read-only.
 
 ```powershell
 psql -U postgres -d defect_tracker -f sql/validation_queries.sql
-
-# individual queries
-psql -U postgres -d defect_tracker -c "SELECT id, title, severity, status FROM issues ORDER BY id DESC LIMIT 10;"
-psql -U postgres -d defect_tracker -c "SELECT status, COUNT(*) FROM issues GROUP BY status ORDER BY status;"
-psql -U postgres -d defect_tracker -c "SELECT severity, COUNT(*) FROM issues GROUP BY severity ORDER BY severity;"
 ```
 
-Check stored values after a create:
+The checks that matter most, and what "correct" looks like:
 
 ```sql
+-- 1. The row the API just returned really exists, with the same values.
 SELECT id, title, severity, status, category, environment,
        created_at AT TIME ZONE 'UTC' AS created_at_utc
+FROM issues
+WHERE id = 1;
+
+-- 2. No column ever holds a value outside its documented set. Expect 0 rows.
+SELECT 'invalid severity' AS problem, id, severity AS value FROM issues
+WHERE severity NOT IN ('Low', 'Medium', 'High', 'Critical')
+UNION ALL
+SELECT 'invalid status', id, status FROM issues
+WHERE status NOT IN ('Open', 'In Progress', 'Closed');
+
+-- 3. Titles are within the documented range. Expect 0 rows.
+SELECT id, title FROM issues
+WHERE title IS NULL OR length(trim(title)) < 3 OR length(title) > 200;
+
+-- 4. updated_at never precedes created_at. Expect 0 rows.
+SELECT id, created_at, updated_at FROM issues WHERE updated_at < created_at;
+
+-- 5. After PATCH /issues/1 {"status":"In Progress"} the row shows the new value
+--    and a newer updated_at. After DELETE /issues/1 this returns 0 rows.
+SELECT id, status, created_at, updated_at, (updated_at > created_at) AS was_updated
 FROM issues WHERE id = 1;
+
+-- 6. These aggregates must equal GET /issues/stats.
+SELECT status,   COUNT(*) AS total FROM issues GROUP BY status   ORDER BY status;
+SELECT severity, COUNT(*) AS total FROM issues GROUP BY severity ORDER BY severity;
+
+-- 7. Duplicate detection. Nothing in the schema prevents duplicates on purpose
+--    (testers legitimately re-report similar defects), so they are reported here.
+SELECT title, severity, environment, COUNT(*) AS occurrences, ARRAY_AGG(id ORDER BY id) AS issue_ids
+FROM issues
+GROUP BY title, severity, environment
+HAVING COUNT(*) > 1
+ORDER BY occurrences DESC;
 ```
 
-Detect invalid data (each must return 0 rows):
+The step-by-step workflow - create, capture the id, `GET`, SQL check, update, SQL check, delete,
+verify - with a table of expected values is in
+[test-documentation/database-validation.md](test-documentation/database-validation.md). Its
+PostgreSQL section is still marked *pending*, because this was built on a machine without a
+PostgreSQL server.
 
-```sql
-SELECT id, severity FROM issues WHERE severity NOT IN ('Low', 'Medium', 'High', 'Critical');
-SELECT id, title  FROM issues WHERE length(trim(title)) < 3 OR length(title) > 200;
-SELECT id         FROM issues WHERE updated_at < created_at;
-```
+## 13. Test documentation
 
-Detect duplicates:
-
-```sql
-SELECT title, severity, environment, COUNT(*) AS occurrences
-FROM issues GROUP BY title, severity, environment HAVING COUNT(*) > 1 ORDER BY occurrences DESC;
-```
-
-The step-by-step workflow (create -> capture id -> GET -> SQL check -> update -> SQL check -> delete -> verify) is documented in [`test-documentation/database-validation.md`](test-documentation/database-validation.md), including a summary table of checks and spaces for the PostgreSQL results.
-
-## 19. Security notes
-
-Implemented:
-
-- **Input validation** at the API boundary (Pydantic: required fields, enum membership, length limits, type checks, trimming) and again as database `CHECK` constraints.
-- **Parameterised queries / ORM** for all data access - no string concatenation of user data into SQL. The only raw SQL is `SELECT 1` in the health check, which takes no user input.
-- **No secret or internal leakage:** error responses contain only a `type`, `message` and field-level `details`. SQL text, stack traces and credentials are logged server-side only, and a test asserts the 500 body contains none of `traceback`, `sqlalchemy`, `select `, `insert into` or `password`.
-- **Environment-based configuration:** all settings come from environment variables / `.env`; `.env` is git-ignored and only `.env.example` placeholders are committed. `db_init` logs the database URL with the password masked.
-- **Session hygiene:** the `get_db` dependency rolls back on exception and always closes the session; `pool_pre_ping` avoids stale connections.
-- **CORS** allow-list configurable via `CORS_ORIGINS` (`allow_credentials=False`).
-- **Synthetic test data only** - no real customer or personal information.
-
-Not implemented (recommended for any real deployment): authentication/authorisation, rate limiting, HTTPS/TLS termination, security headers (CSP/HSTS), audit logging, a secrets manager, and dependency vulnerability scanning.
-
-**No compliance certification or production security audit is claimed.** This is a portfolio project.
-
-## 20. Limitations and future enhancements
-
-**Limitations**
-
-1. **No authentication or authorisation** - every endpoint is open; suitable for local development only.
-2. **PostgreSQL-specific verification is scripted but was not executed here** - no PostgreSQL server was available in the build environment, so the integration tests are skipped and the SQL validation results are marked *pending*.
-3. **No migration framework** - schema creation uses SQLAlchemy metadata (`app.db_init`) or `sql/schema.sql`; there is no Alembic history.
-4. **SQLite is used for the automated unit/API suite**, so PostgreSQL-only behaviour (for example `timestamptz` offsets and server-side constraint error wording) is covered only by the opt-in integration suite.
-5. **No soft delete or audit trail** - deletes are physical and untracked.
-6. **No rate limiting, caching or background jobs.**
-7. **`updated_at` is maintained by the application** (plus an optional PostgreSQL trigger); direct SQL updates that skip the trigger will not refresh it.
-8. **Text search** uses a simple case-insensitive match, not full-text search, so it does not scale to very large tables.
-9. **No load or security testing** has been performed.
-10. **The dashboard is a lightweight convenience UI**, not a tested product surface.
-
-**Future enhancements**
-
-1. Add Alembic migrations and expand CI with coverage gates and Newman runs.
-2. Add authentication (JWT or API key) with role-based permissions for testers and admins.
-3. Add soft delete, an audit/history table, and explicit `assignee`, `reporter` and `fixed_in_version` fields.
-4. Use PostgreSQL full-text search (`tsvector`) or trigram indexes for `search`.
-5. Add contract testing (schemathesis / OpenAPI fuzzing) and load testing (k6 or Locust).
-6. Enrich statistics: counts over time, per category/environment, mean age of open defects.
-7. Add structured JSON logging with correlation ids and containerise the stack with Docker Compose.
-
-## 21. Portfolio summary and GitHub topics
-
-**Summary.** A layered FastAPI + PostgreSQL defect-tracking API surrounded by a complete QA toolchain: a 103-test pytest suite with 91% coverage, 5 opt-in PostgreSQL integration tests, a 16-request Postman collection with 69 assertions, 17 SQL validation queries, and five test-documentation deliverables. It demonstrates test design from requirements, negative and boundary-value testing, verification of stored data with SQL rather than trusting API responses, and fully isolated automated tests that cannot modify a developer's database.
-
-**Documents to explore**
-
-| Deliverable | Path |
+| Document | What it contains |
 | --- | --- |
-| Detailed technical report | [`PROJECT_TECHNICAL_REPORT.md`](PROJECT_TECHNICAL_REPORT.md) |
-| Test plan | [`test-documentation/test-plan.md`](test-documentation/test-plan.md) |
-| Test cases (84) | [`test-documentation/test-cases.csv`](test-documentation/test-cases.csv) |
-| Defect report template | [`test-documentation/defect-report-template.md`](test-documentation/defect-report-template.md) |
-| Database validation workflow | [`test-documentation/database-validation.md`](test-documentation/database-validation.md) |
-| Test execution report | [`test-documentation/test-execution-report.md`](test-documentation/test-execution-report.md) |
-| Contribution guide | [`CONTRIBUTING.md`](CONTRIBUTING.md) |
+| [test-plan.md](test-documentation/test-plan.md) | Objectives, scope, entry and exit criteria, test strategy per level, risks |
+| [test-cases.csv](test-documentation/test-cases.csv) | 84 test cases with steps, test data, expected and actual results |
+| [database-validation.md](test-documentation/database-validation.md) | The API-versus-database validation workflow and the recorded results |
+| [test-execution-report.md](test-documentation/test-execution-report.md) | Environment, commands, actual results, coverage, exit-criteria assessment |
+| [defect-report-template.md](test-documentation/defect-report-template.md) | The report format, severity and priority definitions, plus one clearly labelled fictional example |
+| [PROJECT_TECHNICAL_REPORT.md](PROJECT_TECHNICAL_REPORT.md) | A longer technical write-up of the same implementation |
+| [PROJECT_NOTES.md](PROJECT_NOTES.md) | Design decisions, the API-testing versus database-validation distinction, limitations and next steps |
 
-**Suggested GitHub topics:** `fastapi` `python` `postgresql` `sqlalchemy` `pytest` `api-testing` `postman` `newman` `test-automation` `qa` `software-testing` `rest-api` `pydantic` `coverage` `defect-tracking`
+## 14. Known limitations
 
-## 22. License
+1. **No authentication or authorisation.** Every endpoint is open. This is fine for local
+   development and testing practice, and unsuitable for anything else.
+2. **The PostgreSQL-specific verification has not been executed.** The integration tests and the
+   SQL validation queries are written and ready, but no PostgreSQL server was available when the
+   project was put together, so both are marked *pending* rather than passing.
+3. **No migration framework.** The schema is created by `app.db_init` or `sql/schema.sql`.
+   Changing a column means changing both `app/models.py` and `sql/schema.sql` and recreating the
+   table; there is no Alembic history.
+4. **SQLite is not PostgreSQL.** `CHECK` violations, `timestamptz` handling and error wording can
+   differ between the two. The unit suite runs on SQLite, so those differences are covered only
+   by the opt-in integration suite.
+5. **`sql/schema.sql` and `app/models.py` are two copies of one schema.** Nothing checks that
+   they stay identical.
+6. **`description` has no database-level length limit.** Pydantic caps it at 2000 characters, but
+   the column is `TEXT`, so a raw `INSERT` could store more.
+7. **Deletes are physical and untracked.** There is no soft delete and no audit trail.
+8. **`updated_at` is maintained by the application**, plus an optional PostgreSQL trigger. A
+   direct SQL update that bypasses the trigger will not refresh it.
+9. **Text search is a simple `ILIKE` match**, not full-text search, so it will not scale to a
+   large table. There is no index on `description` either.
+10. **No load, stress or security testing has been performed.** The security section of
+    `PROJECT_TECHNICAL_REPORT.md` describes what the code does; it is not a security audit.
+11. **The dashboard is an untested convenience UI.** It is verified to load and to talk to the
+    API, nothing more.
 
-No license has been chosen for this repository yet, so **no license is currently granted**
-(all rights reserved by default). If you intend to publish it as open source, add a `LICENSE`
-file (for example MIT) and update this section.
+## 15. Next improvements
 
----
+The order below is roughly the order I would do them in - smallest useful change first.
 
-### Manual steps still required
+1. **Run the PostgreSQL verification on a machine that has PostgreSQL**, and paste the real
+   output into `database-validation.md`. This closes the largest gap in the project.
+2. **Split the API docs out of the errors module if it grows**, and add a coverage gate to
+   `.github/workflows/tests.yml` so a drop below the current level fails the build.
+3. **Add a test that keeps `app/models.py` and `sql/schema.sql` in sync** - for example by
+   comparing `inspect(engine).get_check_constraints()` against the constraint names in the SQL
+   file.
+4. **Add the missing `CHECK` on `description` length** so the database enforces what Pydantic
+   already enforces.
+5. **Introduce Alembic** once the schema starts changing, and stop hand-maintaining two copies.
+6. **Add authentication** (an API key or JWT) with a role for testers and one for administrators,
+   before this is exposed anywhere.
+7. **Add soft delete plus an audit table**, which is what a real defect tracker needs before
+   anyone is allowed to delete records.
+8. **Replace `ILIKE` with a PostgreSQL `tsvector` or trigram index** if the table grows.
+9. **Add contract testing** (`schemathesis` against `openapi.json`) and a small load test
+   (`k6` or `Locust`) to cover the two areas currently untested.
+10. **Extend the statistics endpoint** with per-category counts and the average age of open
+    defects.
 
-1. **Install PostgreSQL 14+** and add `psql` to `PATH` (section 10.1).
-2. **Create `defect_tracker` and `defect_tracker_test`** (section 10.2).
-3. **Create `.env`** from `.env.example` and set the real `DATABASE_URL` (section 11).
-4. **Initialise the schema** with `python -m app.db_init` or `psql -f sql/schema.sql` (section 10.3).
-5. **Run the PostgreSQL integration tests and SQL validation queries**, then record the real output in `test-documentation/database-validation.md` section 3.2 - they are currently marked *pending* because no PostgreSQL server was available while building this project.
+These are ideas, not implemented features. Nothing in section 14 or 15 is claimed as done.
+
+## 16. What this project demonstrates
+
+Short and specific - each point is something the code itself shows, so it can be pointed at
+during a review:
+
+- **Validation belongs in two places.** Pydantic gives a readable `422`; the database `CHECK`
+  constraints mean a raw `INSERT` cannot store a severity that the API would have rejected. Both
+  are tested, including by bypassing the API entirely.
+- **Route order is a real bug source.** `/issues/stats` only works because the statistics router
+  is registered before the issues router. There is a test that fails if that order changes.
+- **Pagination needs a tie-breaker.** Sorting by a low-cardinality column such as `severity`
+  leaves rows in an arbitrary order, so `id` is appended as a secondary sort key.
+- **`PATCH` is not `PUT`.** Using `model_dump(exclude_unset=True)` is what makes "field omitted"
+  different from "field set to null", and there are tests for both.
+- **A `201` proves nothing about the database.** Every persistence claim in the suite is backed
+  by a SQL query against the stored row, not by the API response.
+- **Test isolation has to be enforced, not assumed.** The fixture asserts the dialect is SQLite
+  before handing out a client, and the integration suite refuses to run against a database whose
+  name does not end in `_test`.
+
+If you are reading this repository as an interviewer, these are the points I would want to be
+asked about.
+
+## 17. License
+
+No license has been chosen for this repository, so **no license is currently granted** (all
+rights reserved by default). If you want to reuse this code, open an issue and a license can be
+added.
