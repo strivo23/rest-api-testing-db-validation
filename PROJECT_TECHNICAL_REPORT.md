@@ -41,7 +41,7 @@
 
 ### 1.1 Title and purpose
 
-**REST API Testing & Database Validation Platform** is a production-style portfolio project: a defect-tracking REST API plus the complete QA toolchain around it (Postman collection, pytest suite with coverage, SQL validation scripts and formal test documentation).
+**REST API Testing & Database Validation Platform** is a portfolio project: a defect-tracking REST API plus the complete QA toolchain around it (Postman collection, pytest suite with coverage, SQL validation scripts and formal test documentation).
 
 The API lets a tester **create, retrieve, filter, update and delete software defect records** and read **aggregated statistics**. Every write is validated twice - by Pydantic at the API boundary and by `CHECK` constraints in the database - and every endpoint is documented and tested.
 
@@ -94,7 +94,7 @@ All versions below were printed by the installed environment (Python 3.12.9 virt
 | **FastAPI** | 0.161.1 | Web framework: routing, dependency injection, request parsing, automatic OpenAPI generation |
 | **Starlette** | 1.9.0 | ASGI toolkit underlying FastAPI (routing/TestClient); pulled in as a FastAPI dependency |
 | **Uvicorn** | 0.54.0 | ASGI server that runs the app (`uvicorn app.main:app`) |
-| **PostgreSQL** | not installed here (target: 14+) | The production database; `issues` table with `TIMESTAMPTZ`, `CHECK` constraints and indexes |
+| **PostgreSQL** | not installed here (target: 14+) | The intended deployment database; `issues` table with `TIMESTAMPTZ`, `CHECK` constraints and indexes |
 | **psycopg2-binary** | 2.9.13 | PostgreSQL DBAPI driver used by SQLAlchemy (the `postgresql+psycopg2://` dialect) |
 | **SQLAlchemy** | 2.1.6 | ORM + SQL toolkit: typed `Mapped` models, engine/session management, parameterised queries |
 | **Pydantic** | 2.14.1 | Request validation and response serialisation (enums, length rules, custom validators) |
@@ -615,7 +615,7 @@ Stack traces, SQL text and credentials are never returned; they are logged serve
 | **API testing** | Black-box testing of HTTP contracts | The Postman collection (16 requests, 69 assertions) executed in Postman or Newman |
 | **Database validation** | Verifying stored state independently of the API | `sql/validation_queries.sql` (17 queries) + SQL reads inside pytest |
 | **Integration testing** | Verifying the real driver/server behaviour | `tests/integration/test_postgres_integration.py` against real PostgreSQL |
-| **Automated testing** | Repeatable, deterministic regression suite | pytest + FastAPI `TestClient`, 120 collected tests |
+| **Automated testing** | Repeatable, deterministic regression suite | pytest + FastAPI `TestClient`, 121 collected tests |
 
 The key principle: **API testing alone is not sufficient.** A 201 response only proves the API *said* it stored the data. The SQL layer proves the row actually exists with the right values.
 
@@ -630,7 +630,7 @@ The key principle: **API testing alone is not sufficient.** A 201 response only 
 | `tests/test_errors.py` | 3 | Safe 500 on DB failure, consistent 404, consistent 405 |
 | `tests/integration/test_postgres_integration.py` | 5 | PostgreSQL dialect reporting, UTC `TIMESTAMPTZ`, real CHECK violation via raw SQL, `updated_at` after PATCH, delete-then-select |
 
-**Total collected: 120** (115 run + 5 skipped by default).
+**Total collected: 121** (116 run + 5 skipped by default).
 
 ### 8.3 Test categories in the suite
 
@@ -700,14 +700,14 @@ newman run postman/REST_API_Testing.postman_collection.json
 ### 9.2 pytest result (actual)
 
 ```text
-115 passed, 5 skipped, 1 warning in 3.93s
+121 passed, 5 skipped, 1 warning in ~4-6s
 ```
 
 | Metric | Value |
 | --- | --- |
-| Tests collected | 120 |
-| Executed | 115 |
-| **Passed** | **115** |
+| Tests collected | 121 |
+| Executed | 121 |
+| **Passed** | **121** |
 | Failed | 0 |
 | Errors | 0 |
 | Skipped | 5 (PostgreSQL integration tests - `TEST_DATABASE_URL` not configured) |
@@ -730,9 +730,9 @@ app\routes\__init__.py       2      0   100%
 app\routes\health.py        18      0   100%
 app\routes\issues.py        34      0   100%
 app\routes\stats.py          9      0   100%
-app\schemas.py              92      6    93%   45, 68, 71, 79-80, 110
+app\schemas.py              99      5    95%   46, 78, 94-95, 125
 ------------------------------------------------------
-TOTAL                      403     35    91%
+TOTAL                      410     34    92%
 ```
 
 Uncovered lines are all intentional: `db_init.py` is a CLI wrapper run manually; `database.py` lines 45-52 are the PostgreSQL pool branch plus the module-level engine creation; `main.py` 33-35 is the `AUTO_CREATE_TABLES` startup branch; `schemas.py` contains defensive `None` branches; `errors.py` 109-110 is the deliberately hard-to-trigger generic fallback.
@@ -971,7 +971,7 @@ Only skills directly supported by the implementation are listed.
 - SQLAlchemy 2.x typed ORM (`DeclarativeBase`, `Mapped`, `mapped_column`).
 - Schema design: primary key, NOT NULL, five `CHECK` constraints, six indexes, `TIMESTAMPTZ`.
 - Engine/session management, connection pooling, `pool_pre_ping`, transaction rollback.
-- Multi-dialect support (PostgreSQL in production, SQLite in tests).
+- Multi-dialect support (PostgreSQL in the deployment target, SQLite in tests).
 - Writing SQL DDL (`schema.sql`) and read-only validation queries, plus a `plpgsql` trigger.
 
 **API testing**
@@ -1057,8 +1057,8 @@ Without a tie-breaker, two rows with the same sort value have an undefined relat
 **Q8. How do you prove the API actually stored the data, not just returned it?**
 Three ways: SQL reads inside pytest (e.g. `SELECT severity, status FROM issues WHERE id = :id`) that assert the stored values; `sql/validation_queries.sql` for manual `psql` verification against the same row the API returned; and Postman follow-up `pm.sendRequest` GETs (requests 10 and 11) that re-read the record after a PATCH to prove persistence and non-modification on failure.
 
-**Q9. What does `pytest-cov` measure, and what does 91% mean here?**
-It measures the fraction of executable statements in `app/` exercised by the tests. 91% means 368 of 403 statements executed (35 missed). The uncovered lines are all justified in §9.3 - CLI wrappers, the PostgreSQL pool branch, an optional startup flag and defensive branches. High coverage is not the goal; covering the *business-critical* paths is, and `crud.py`, `models.py` and all three route modules are at 98-100%.
+**Q9. What does `pytest-cov` measure, and what does 92% mean here?**
+It measures the fraction of executable statements in `app/` exercised by the tests. 92% means 376 of 410 statements executed (34 missed). The uncovered lines are all justified in §9.3 - CLI wrappers, the PostgreSQL pool branch, an optional startup flag and defensive branches. High coverage is not the goal; covering the *business-critical* paths is, and `crud.py`, `models.py` and all three route modules are at 98-100%.
 
 **Q10. How does the PATCH endpoint avoid overwriting fields the client did not send?**
 `crud.update_issue()` calls `payload.model_dump(exclude_unset=True)`. Pydantic tracks which fields were explicitly provided (`model_fields_set`), so only those fields are assigned onto the ORM object. `test_patch_issue_status_only` asserts that title, severity and `created_at` retain their original values.
@@ -1075,8 +1075,8 @@ Because `/issues/stats` and `/issues/{issue_id}` have the same URL shape. FastAP
 **Q14. How do you prevent SQL injection?**
 All database access uses the SQLAlchemy ORM and Core expressions with bound parameters (`select(models.Issue).where(models.Issue.severity == severity)`), which the driver sends as parameterised SQL. The filter values come from validated enum/typed query parameters. The only raw SQL string is `text("SELECT 1")` in the health check, which takes no user input. There is no string concatenation of user data into SQL anywhere in the codebase.
 
-**Q15. What would you do next to make this production-ready, and what are the biggest gaps?**
-The biggest gaps are authentication/authorisation, database migrations (Alembic), and CI. I would add JWT-based auth with roles, introduce Alembic so schema changes are versioned, add a GitHub Actions pipeline that runs pytest with a coverage gate plus Newman, and add soft delete with an audit trail. I would also run the PostgreSQL integration suite and SQL validation queries as part of that pipeline - today they are scripted but must be executed manually because no PostgreSQL server was available in the build environment.
+**Q15. What would you do next to close the biggest gaps before this could be called production-ready?**
+The biggest gaps are authentication/authorisation and database migrations (Alembic). CI already exists (`.github/workflows/tests.yml` runs pytest on Python 3.11 and 3.12 with a `--cov-fail-under=85` gate, plus a separate PostgreSQL integration job against a disposable service). I would add JWT-based auth with roles, introduce Alembic so schema changes are versioned, add Newman to the pipeline, and add soft delete with an audit trail. I would also run the SQL validation queries as part of that pipeline - today they are scripted but must be executed manually because no PostgreSQL server was available in the build environment.
 
 ---
 
@@ -1084,14 +1084,14 @@ The biggest gaps are authentication/authorisation, database migrations (Alembic)
 
 ### 16.1 GitHub README summary
 
-> A production-style **defect-tracking REST API** built with **FastAPI, SQLAlchemy 2.x and PostgreSQL**, surrounded by a complete QA toolchain: a **16-request Postman collection**, an **automated pytest suite (115 passing tests, 91% coverage)** with **5 opt-in PostgreSQL integration tests**, **17 SQL validation queries**, and full test documentation (test plan, 84 test cases, defect report template, database validation workflow, test execution report).
+> A portfolio **defect-tracking REST API** built with **FastAPI, SQLAlchemy 2.x and PostgreSQL**, surrounded by a complete QA toolchain: a **16-request Postman collection**, an **automated pytest suite (121 passing tests, 92% coverage)** with **5 opt-in PostgreSQL integration tests**, **17 SQL validation queries**, and full test documentation (test plan, 84 test cases, defect report template, database validation workflow, test execution report).
 >
 > The API exposes health, CRUD, filtering/sorting/pagination and statistics endpoints, validates every input twice (Pydantic + database `CHECK` constraints), uses UTC timestamps throughout, and returns a consistent JSON error contract that never leaks stack traces or credentials. The automated suite is fully isolated - each test runs on a fresh in-memory SQLite database, and the integration suite refuses to touch any database that is not named `*_test`.
 
 ### 16.2 Resume bullets (DRAFTS - use only after you have personally run and verified the relevant features)
 
 > **Draft 1 (overall project):**
-> Built a defect-tracking REST API with FastAPI, SQLAlchemy 2.x and PostgreSQL, plus a full QA toolchain - a 16-request Postman collection, a 115-test pytest suite with 91% statement coverage, 17 SQL validation queries, and five test documentation deliverables.
+> Built a defect-tracking REST API with FastAPI, SQLAlchemy 2.x and PostgreSQL, plus a full QA toolchain - a 16-request Postman collection, a 121-test pytest suite with 92% statement coverage, 17 SQL validation queries, and five test documentation deliverables.
 
 > **Draft 2 (testing depth):**
 > Designed 84 test cases (functional, negative, boundary-value, data-consistency, integration, regression) and automated the core suites with pytest and FastAPI TestClient, verifying stored data with direct SQL rather than trusting API responses alone.
@@ -1119,7 +1119,7 @@ The biggest gaps are authentication/authorisation, database migrations (Alembic)
 
 | Command | Outcome |
 | --- | --- |
-| `.\.venv\Scripts\python.exe -m pytest --cov=app --cov-report=term-missing -q` | `115 passed, 5 skipped, 1 warning`; TOTAL 403 stmts, 35 miss, **91%** |
+| `.\.venv\Scripts\python.exe -m pytest --cov=app --cov-report=term-missing -q` | `121 passed, 5 skipped, 1 warning`; TOTAL 410 stmts, 34 miss, **92%** |
 | `python -c "import ..."` (version probe) | Python 3.12.9; FastAPI 0.161.1; Starlette 1.9.0; Uvicorn 0.54.0; SQLAlchemy 2.1.6; Pydantic 2.14.1; pydantic-settings 2.16.1; psycopg2 2.9.13; pytest 9.1.1; pytest-cov 7.1.0; httpx 0.28.1 |
 | `Select-String '"Pass"' / '"Pending"' test-cases.csv` | 79 Pass, 5 Pending, 84 data rows |
 | Test-case ID group count | CRE 25, DBC 5, DEL 5, ERR 2, GET 5, HLT 4, INT 5, LST 12, REG 3, STA 6, UPD 12 (= 84) |

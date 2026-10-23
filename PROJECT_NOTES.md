@@ -88,7 +88,7 @@ branches on the URL: SQLite gets `check_same_thread=False`, PostgreSQL gets the 
 sizes. `pool_pre_ping=True` is set for both so a stale connection is retried instead of failing
 the request.
 
-**Why:** the unit suite runs on SQLite and needs no server, but the production target is
+**Why:** the unit suite runs on SQLite and needs no server, but the deployment target is
 PostgreSQL. One builder means the application code does not need to know which one it is
 talking to.
 
@@ -144,7 +144,7 @@ grew to need per-environment assembly, a `create_app()` factory is the natural n
 | --- | --- |
 | **FastAPI** | The OpenAPI schema is generated from the code, so the documented API cannot drift from the routes without the tests noticing. Its `TestClient` runs the real application in-process, so the pytest suite tests the actual ASGI app rather than a re-implementation. Dependency injection is what makes `get_db` swappable for the in-memory test database. |
 | **PostgreSQL** | The project is about verifying persistence, so it targets a real relational database with real constraints: native `CHECK` constraints, `timestamptz`, and indexes that can be inspected with `EXPLAIN`. Running only against SQLite would leave the parts most likely to differ unverified. |
-| **SQLAlchemy 2.x** | One set of typed models (`Mapped[...]`) drives both the application queries and the test schema, and `select()` expressions can be reused by the CRUD layer and the aggregate endpoint. The same code path runs on SQLite in tests and PostgreSQL in production, with the differences isolated in `build_engine`. |
+| **SQLAlchemy 2.x** | One set of typed models (`Mapped[...]`) drives both the application queries and the test schema, and `select()` expressions can be reused by the CRUD layer and the aggregate endpoint. The same code path runs on SQLite in tests and PostgreSQL in the deployment target, with the differences isolated in `build_engine`. |
 | **Pydantic v2** | The API needs enum and length validation with a machine-readable error payload. Pydantic gives that directly, and the consistent error shape in `app/errors.py` is built on top of its `loc`/`msg`/`type` output. |
 | **pytest + pytest-cov** | Fixtures make the fresh-database-per-test setup cheap, and parametrised/table-driven cases keep the boundary tests readable. Coverage points at the modules that are not exercised, which is how the uncovered lines in `database.py` and `db_init.py` were identified and explained rather than ignored. |
 | **Postman / Newman** | Some assertions are clearer at the HTTP level and by hand: status codes, content types, and "a rejected update did not modify the record". Postman collections are also what a tester is often handed at work, and Newman lets the same collection run without a GUI, which is how the recorded results in `test-execution-report.md` were produced. |

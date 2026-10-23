@@ -52,7 +52,15 @@ def client(db_session) -> TestClient:
     """FastAPI test client whose ``get_db`` dependency points at the test database."""
 
     def override_get_db():
-        yield db_session
+        # Mirrors app.database.get_db(): roll back on failure so a rejected
+        # request cannot leave the session in a broken state. close() is *not*
+        # mirrored - the db_session fixture owns the session lifecycle so that
+        # tests can still query the database after a request.
+        try:
+            yield db_session
+        except Exception:
+            db_session.rollback()
+            raise
 
     # Safety net: the API must talk to the throw-away SQLite session, never to
     # the developer's configured database.

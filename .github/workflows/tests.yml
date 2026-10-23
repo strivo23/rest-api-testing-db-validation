@@ -34,7 +34,8 @@ jobs:
       - name: Run the test suite with coverage
         # The suite runs on in-memory SQLite, so no database service or secrets are needed.
         # TEST_DATABASE_URL is intentionally not set, so the PostgreSQL integration tests skip.
-        run: pytest -v --cov=app --cov-report=term-missing --cov-report=xml
+        # --cov-fail-under keeps a large coverage regression from passing silently.
+        run: pytest -v --cov=app --cov-report=term-missing --cov-report=xml --cov-fail-under=85
 
       - name: Upload the coverage report
         if: always()
@@ -43,3 +44,46 @@ jobs:
           name: coverage-xml-py${{ matrix.python-version }}
           path: coverage.xml
           if-no-files-found: ignore
+
+  postgres-integration:
+    # Opt-in PostgreSQL suite against a throw-away service. It is a separate job so it can
+    # never hide a failure in the SQLite job above.
+    name: PostgreSQL integration tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: defect_tracker_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      # The integration suite refuses to run unless the database name ends with _test.
+      TEST_DATABASE_URL: postgresql+psycopg2://postgres:postgres@localhost:5432/defect_tracker_test
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run the PostgreSQL integration tests
+        run: pytest tests/integration -v -m integration

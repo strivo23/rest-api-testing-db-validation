@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -52,7 +53,13 @@ class IssueCreate(IssueBase):
 
 
 class IssueUpdate(BaseModel):
-    """Payload accepted by ``PATCH /issues/{id}`` - every field is optional."""
+    """Payload accepted by ``PATCH /issues/{id}`` - every field is optional.
+
+    Omitting a field means "leave it unchanged". ``description`` may be sent as an
+    explicit ``null`` to clear it. The remaining columns are ``NOT NULL`` in the
+    database, so an explicit ``null`` for them is rejected here with a 422 rather
+    than being passed down and failing as a 500.
+    """
 
     title: str | None = Field(default=None, min_length=3, max_length=200)
     description: str | None = Field(default=None, max_length=2000)
@@ -65,11 +72,19 @@ class IssueUpdate(BaseModel):
     @classmethod
     def _validate_title(cls, value: str | None) -> str | None:
         if value is None:
-            return None
+            raise ValueError("title cannot be null; omit it to leave it unchanged")
         cleaned = value.strip()
         if len(cleaned) < 3:
             raise ValueError("title must contain at least 3 non-whitespace characters")
         return cleaned
+
+    @field_validator("severity", "status", "category", "environment")
+    @classmethod
+    def _reject_null(cls, value: Any) -> Any:
+        """These columns are ``NOT NULL``; a null is a client error, not a 500."""
+        if value is None:
+            raise ValueError("this field cannot be null; omit it to leave it unchanged")
+        return value
 
     @field_validator("description")
     @classmethod

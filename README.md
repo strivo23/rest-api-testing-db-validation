@@ -8,13 +8,14 @@ The point of the project is not the API itself. It is the testing workflow: writ
 specification, exercise the API over HTTP, and then check with SQL that the database really
 contains what the API claimed it stored.
 
-<!-- Badges are static snapshots of the last local run recorded in
-     test-documentation/test-execution-report.md (2026-10-23). They are not a live CI status. -->
+<!-- The test badge is the live GitHub Actions status for .github/workflows/tests.yml.
+     It reports whatever the latest run did - it is not a static snapshot, and there is
+     deliberately no hardcoded test-count or coverage badge, because those go stale.
+     The other three badges are not version-pinned and cannot drift. -->
+[![tests](https://github.com/strivo23/rest-api-testing-db-validation/actions/workflows/tests.yml/badge.svg)](https://github.com/strivo23/rest-api-testing-db-validation/actions/workflows/tests.yml)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.161-009688)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-14%2B-336791)
-![Tests](https://img.shields.io/badge/tests-115%20passed-brightgreen)
-![Coverage](https://img.shields.io/badge/coverage-91%25-yellowgreen)
 
 ---
 
@@ -45,8 +46,8 @@ pagination and aggregates you can verify with SQL. It is also small enough to re
 | Part | State |
 | --- | --- |
 | API implementation | Working |
-| pytest suite (SQLite) | 115 passed, 5 skipped |
-| Postman / Newman collection | 21 requests, 69 assertions, 0 failures |
+| pytest suite (SQLite) | 121 passed, 5 skipped |
+| Postman / Newman collection | 16 requests, 0 assertion failures |
 | PostgreSQL integration tests | Written, **not run here** - no PostgreSQL server in this environment |
 | PostgreSQL SQL validation queries | Written, **not run here** - same reason |
 
@@ -60,7 +61,7 @@ just need a machine with PostgreSQL installed. Nothing in this README claims the
 | **Python 3.11+** | One language for the service, the tests and the SQL tooling. |
 | **FastAPI** | Gives request parsing, dependency injection and an OpenAPI schema for free, so the API contract is documented without writing a second document by hand. Its `TestClient` lets the pytest suite call the real app in-process. |
 | **Pydantic v2** | The first line of validation. Enum membership, string lengths and the "don't send an empty PATCH" rule live here, and the error format is normalised into one JSON shape. |
-| **SQLAlchemy 2.x** | Typed models (`Mapped[...]`) plus `select()` expressions. Also the reason the same code runs against SQLite in tests and PostgreSQL in production. |
+| **SQLAlchemy 2.x** | Typed models (`Mapped[...]`) plus `select()` expressions. Also the reason the same code runs against SQLite in tests and PostgreSQL in the deployment target the project is written for. |
 | **PostgreSQL** | The real target: `timestamptz`, native `CHECK` constraints, indexes. Chosen because a tester should validate against the database that will actually be used. |
 | **psycopg2-binary** | The driver behind `postgresql+psycopg2://` URLs. |
 | **pydantic-settings** | Reads configuration from environment variables or `.env` into one typed object, so no connection string is hardcoded. |
@@ -245,7 +246,7 @@ rest-api-testing-db-validation/
 ├── tests/
 │   ├── conftest.py        # in-memory SQLite fixtures + TestClient
 │   ├── test_health.py     # 4 tests
-│   ├── test_issues.py     # 103 tests
+│   ├── test_issues.py     # 109 tests
 │   ├── test_stats.py      # 5 tests
 │   ├── test_errors.py     # 3 tests
 │   └── integration/
@@ -266,6 +267,7 @@ rest-api-testing-db-validation/
 ├── CONTRIBUTING.md
 ├── PROJECT_NOTES.md           # design decisions, limitations, next steps
 ├── PROJECT_TECHNICAL_REPORT.md
+├── REPOSITORY_AUDIT.md        # findings from the repository quality audit
 ├── pytest.ini
 └── requirements.txt
 ```
@@ -296,6 +298,19 @@ copy .env.example .env
 
 The pytest suite needs no database server - it creates its own in-memory SQLite database - so
 you can run it immediately after step 3.
+
+The commands above are PowerShell. On macOS or Linux use the same steps with
+`python -m venv .venv`, `source .venv/bin/activate`, `pip install -r requirements.txt` and
+`.venv/bin/python -m pytest`. Nothing in the project is Windows-specific except the examples.
+
+### Which Python packages get installed
+
+`requirements.txt` declares supported **ranges** (`fastapi>=0.110,<1.0`, `pytest>=8.0`, …) rather
+than exact pins, so `pip install -r requirements.txt` on two machines can resolve to different
+patch versions. The versions that were actually used for the test evidence in this repository
+are listed in
+[test-execution-report.md](test-documentation/test-execution-report.md) section 1. Treat that
+list as "what was tested here", not as a guarantee about your own install.
 
 ## 8. PostgreSQL configuration
 
@@ -456,8 +471,10 @@ collection description.
 | 15 | Pagination and sorting | page metadata, page size respected, ids descending, page 2 does not overlap page 1, `page_size=1000` returns `422` |
 | 16 | Statistics | all buckets present, status and severity sums equal the total |
 
-Last recorded run (2026-10-23, Newman against the live server): **21 requests, 16 test scripts,
-19 pre-request scripts, 69 assertions, 0 failures**. See
+Last recorded run (2026-10-23, Newman against the live server): **0 assertion failures**. Newman
+reported 21 HTTP requests because several requests fire a follow-up `GET` with `pm.sendRequest`
+to prove a change did or did not persist; the collection itself contains **16** request items in
+6 folders. Full per-request evidence is in
 [test-execution-report.md](test-documentation/test-execution-report.md) section 4.
 
 ## 11. pytest and coverage
@@ -478,8 +495,8 @@ pytest tests/integration -v -m integration
 ### Latest result
 
 ```text
-115 passed, 5 skipped in ~4s
-TOTAL coverage: 91% (403 statements, 35 missed)
+121 passed, 5 skipped in ~4-6s
+TOTAL coverage: 92% (410 statements, 34 missed)
 ```
 
 The skipped tests are the five PostgreSQL integration tests, which require `TEST_DATABASE_URL`.
@@ -488,7 +505,7 @@ No test is skipped to make the build green.
 | File | Focus | Tests |
 | --- | --- | --- |
 | `tests/test_health.py` | health, root, OpenAPI schema, degraded database | 4 |
-| `tests/test_issues.py` | CRUD, validation, boundaries, filters, sorting, pagination, raw SQL checks | 103 |
+| `tests/test_issues.py` | CRUD, validation, boundaries, filters, sorting, pagination, raw SQL checks | 109 |
 | `tests/test_stats.py` | statistics accuracy, consistency after update and delete | 5 |
 | `tests/test_errors.py` | error contract, database failure, 404 and 405 | 3 |
 | `tests/integration/test_postgres_integration.py` | real PostgreSQL behaviour | 5 (skipped by default) |
@@ -502,7 +519,9 @@ No test is skipped to make the build green.
   200 / 201 characters.
 - *Persistence and non-mutation*: a successful PATCH is re-read with SQL; a rejected PATCH is
   followed by a `GET` that proves the record is byte-for-byte unchanged; a rejected POST leaves
-  the row count at 0.
+  the row count at 0. A `null` for a non-nullable column (`title`, `severity`, `status`,
+  `category`, `environment`) is rejected with `422`, while `description` can be cleared with an
+  explicit `null` - the two are asserted separately.
 - *Database-level*: raw `INSERT` statements that bypass the API are still rejected by the
   `CHECK` constraints and `NOT NULL`, and the six expected indexes are present.
 - *Contract*: `error.details[].field` names the offending parameter for both body and query
@@ -592,6 +611,7 @@ PostgreSQL server.
 | [defect-report-template.md](test-documentation/defect-report-template.md) | The report format, severity and priority definitions, plus one clearly labelled fictional example |
 | [PROJECT_TECHNICAL_REPORT.md](PROJECT_TECHNICAL_REPORT.md) | A longer technical write-up of the same implementation |
 | [PROJECT_NOTES.md](PROJECT_NOTES.md) | Design decisions, the API-testing versus database-validation distinction, limitations and next steps |
+| [REPOSITORY_AUDIT.md](REPOSITORY_AUDIT.md) | Findings from the repository quality audit: confirmed defects, documentation inconsistencies and their fixes |
 
 ## 14. Known limitations
 
@@ -619,6 +639,11 @@ PostgreSQL server.
     `PROJECT_TECHNICAL_REPORT.md` describes what the code does; it is not a security audit.
 11. **The dashboard is an untested convenience UI.** It is verified to load and to talk to the
     API, nothing more.
+12. **CORS defaults to `*`.** `CORS_ORIGINS` is unrestricted out of the box (with
+    `allow_credentials=False`), which is convenient locally but too permissive to expose on a
+    network. Set it to the exact origins you need before deploying anywhere reachable.
+13. **This is a portfolio project, not a production deployment.** No reverse proxy, no TLS, no
+    rate limiting, no structured logging pipeline and no operational runbook are provided.
 
 ## 15. Next improvements
 
@@ -626,8 +651,9 @@ The order below is roughly the order I would do them in - smallest useful change
 
 1. **Run the PostgreSQL verification on a machine that has PostgreSQL**, and paste the real
    output into `database-validation.md`. This closes the largest gap in the project.
-2. **Split the API docs out of the errors module if it grows**, and add a coverage gate to
-   `.github/workflows/tests.yml` so a drop below the current level fails the build.
+2. **Split the API docs out of the errors module if it grows.** (A coverage gate now exists in
+   `.github/workflows/tests.yml` - `--cov-fail-under=85` - so a large coverage drop fails the
+   build.)
 3. **Add a test that keeps `app/models.py` and `sql/schema.sql` in sync** - for example by
    comparing `inspect(engine).get_check_constraints()` against the constraint names in the SQL
    file.

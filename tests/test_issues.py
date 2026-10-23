@@ -503,6 +503,36 @@ def test_patch_issue_can_clear_the_description_with_an_explicit_null(
     assert stored is None
 
 
+@pytest.mark.parametrize("field", ["title", "severity", "status", "category", "environment"])
+def test_patch_issue_rejects_explicit_null_for_not_null_columns(client, create_issue, field):
+    """Regression: a null for a ``NOT NULL`` column is a client error, not a 500.
+
+    These columns cannot be cleared, so an explicit ``null`` must be rejected by
+    Pydantic with a 422 naming the offending field - it must never reach the
+    database and raise an ``IntegrityError`` that surfaces as a 500.
+    """
+    response = client.patch(f"/issues/{create_issue['id']}", json={field: None})
+
+    assert response.status_code == 422
+    error = response.json()["error"]
+    assert error["type"] == "validation_error"
+    assert [detail["field"] for detail in error["details"]] == [field]
+
+    unchanged = client.get(f"/issues/{create_issue['id']}").json()
+    assert unchanged == create_issue
+
+
+def test_rejected_patch_does_not_poison_the_session_for_later_requests(client, create_issue):
+    """A rejected request must not leave the shared session needing a rollback."""
+    rejected = client.patch(f"/issues/{create_issue['id']}", json={"status": None})
+    assert rejected.status_code == 422
+
+    follow_up = client.get(f"/issues/{create_issue['id']}")
+
+    assert follow_up.status_code == 200
+    assert follow_up.json() == create_issue
+
+
 def test_patch_issue_with_only_unknown_fields_returns_422(client, create_issue):
     """Read-only fields such as ``id`` cannot be used to satisfy the "one field" rule."""
     response = client.patch(f"/issues/{create_issue['id']}", json={"id": 999999})

@@ -4,9 +4,9 @@
 | --- | --- |
 | Project | REST API Testing & Database Validation Platform |
 | Version under test | 1.0.0 |
-| Execution date | 2026-10-23 |
+| Execution date | 2026-10-23 (figures refreshed after the repository quality audit) |
 | Executed by | Automated suites + QA engineer (portfolio project) |
-| Build / working copy | local working copy, no commit hash recorded |
+| Build / working copy | local working copy, `main` @ `d7fe203` plus the audit fixes in `REPOSITORY_AUDIT.md` |
 | Result | **PASS - 0 failures in the executed suites** |
 
 All numbers in this report were produced by actual command runs in the environment
@@ -28,7 +28,7 @@ with the reason.
 | psycopg2-binary | 2.9.13 (driver installed, PostgreSQL server not available) |
 | pytest / pytest-cov | 9.1.1 / 7.1.0 |
 | Postman collection runner | Newman, run through Node.js v24.14.0 (installed into a temporary folder, not part of the project) |
-| Application database | PostgreSQL required for production use; not installed in this environment |
+| Application database | PostgreSQL is the intended deployment target; not installed in this environment |
 | Database used for execution | in-memory SQLite (pytest suite) and a throwaway SQLite file (live server verification) |
 
 ## 2. Automated test suite (pytest)
@@ -43,37 +43,37 @@ pytest --cov=app --cov-report=term-missing
 ### Result
 
 ```text
-collected 120 items
+collected 121 items
 
 tests/test_errors.py ....................... 3 tests
 tests/test_health.py ....................... 4 tests
-tests/test_issues.py ...................... 103 tests
+tests/test_issues.py ...................... 109 tests
 tests/test_stats.py ........................ 5 tests
 tests/integration/test_postgres_integration.py sssss  5 skipped
 
-115 passed, 5 skipped, 1 warning in 3.93s
+121 passed, 5 skipped, 1 warning in ~4-6s
 ```
 
 | Metric | Value |
 | --- | --- |
-| Test cases executed | 115 |
-| Passed | 115 |
+| Test cases executed | 121 |
+| Passed | 121 |
 | Failed | 0 |
 | Errors | 0 |
 | Skipped | 5 (PostgreSQL integration tests - `TEST_DATABASE_URL` not configured) |
 | Warnings | 1 (Starlette deprecation notice about the `httpx` TestClient shim inside FastAPI itself, not project code) |
-| Execution time | 3.93 s |
+| Execution time | ~4-6 s (measured 4.35 s and 5.98 s across runs; varies by machine) |
 
 ### Suite contents
 
 | File | Focus | Test cases |
 | --- | --- | --- |
 | `tests/test_health.py` | Health check, root endpoint, OpenAPI schema, degraded database | 4 |
-| `tests/test_issues.py` | Create/read/update/delete, validation, boundary values, filtering, sorting, pagination, SQL constraints | 103 |
+| `tests/test_issues.py` | Create/read/update/delete, validation, boundary values, filtering, sorting, pagination, SQL constraints | 109 |
 | `tests/test_stats.py` | Statistics accuracy, consistency after update/delete, route ordering | 5 |
 | `tests/test_errors.py` | Global error contract, database failure handling, 404/405 | 3 |
 | `tests/integration/test_postgres_integration.py` | PostgreSQL specific behaviour (skipped) | 5 |
-| **Total collected** | | **120** |
+| **Total collected** | | **121** |
 
 ## 3. Coverage report (pytest-cov)
 
@@ -92,9 +92,9 @@ app\routes\__init__.py       2      0   100%
 app\routes\health.py        18      0   100%
 app\routes\issues.py        34      0   100%
 app\routes\stats.py          9      0   100%
-app\schemas.py              92      6    93%   45, 68, 71, 79-80, 110
+app\schemas.py              99      5    95%   46, 78, 94-95, 125
 ------------------------------------------------------
-TOTAL                      403     35    91%
+TOTAL                      410     34    92%
 ```
 
 Notes on the uncovered lines (all intentional):
@@ -104,7 +104,7 @@ Notes on the uncovered lines (all intentional):
 | `app/db_init.py` | CLI `main()` entry point | Executed manually (`python -m app.db_init`) - see section 5 |
 | `app/database.py` | engine creation for a PostgreSQL URL and the pool branch | Only reachable with a real PostgreSQL server |
 | `app/main.py` | `AUTO_CREATE_TABLES=true` startup branch | Optional convenience flag, exercised manually |
-| `app/schemas.py` | Some defensive validators (`None` handling, `db_init` example) | Defensive branches kept for correctness |
+| `app/schemas.py` | A couple of defensive validator branches (the `None` guards added by the audit fix and a `db_init` example) | Defensive branches kept for correctness |
 | `app/errors.py` | Fallback generic exception handler | Deliberately hard to trigger |
 
 ## 4. Postman collection execution (Newman)
@@ -128,6 +128,11 @@ Executed twice against the live server (`uvicorn app.main:app` on `http://127.0.
 | Assertions failed | 0 | 0 |
 | Total run duration | 1387 ms | - |
 | Average response time | 15 ms (min 3 ms, max 61 ms) | - |
+
+Newman's "Requests executed = 21" counts every HTTP call it makes, including the follow-up
+`GET`s issued from test scripts with `pm.sendRequest` (for example the persistence check after
+request 10). The collection file itself contains **16** request items in 6 folders, which is the
+figure used everywhere else in this report and in the README.
 
 Per-request evidence from the JSON report of run 2 (all requests `pass`):
 
@@ -177,14 +182,33 @@ verification step touched a real development database.
 
 ## 6. Defect summary
 
+### 6.1 Defects open in the delivered version
+
 | Defect ID | Summary | Severity | Status |
 | --- | --- | --- | --- |
-| - | No defect was found in the delivered version. All executed assertions passed. | - | - |
+| - | No defect remains open in the delivered version. All executed assertions pass. | - | - |
+
+### 6.2 Defect found and fixed during the repository quality audit
+
+The quality audit performed after the original run found one real defect that the original
+suite did not cover. It is recorded here because the earlier "no defect" statement was true only
+of the assertions that existed at the time.
+
+| Defect ID | Summary | Severity | Status |
+| --- | --- | --- | --- |
+| AUD-01 | `PATCH /issues/{id}` with an explicit `null` for a non-nullable column (`title`, `severity`, `status`, `category`, `environment`) returned `500 database_error` instead of `422`. | Major | **Fixed** - a `_reject_null` validator in `app/schemas.py` now returns `422`; two regression tests were added. Full detail in `REPOSITORY_AUDIT.md` FIX-01. |
+
+The same audit found that the pytest `get_db` override did not mirror the production rollback
+(`REPOSITORY_AUDIT.md` FIX-02); that test-harness gap was fixed as well, which is what allowed
+AUD-01 to be reproduced and then verified as fixed.
+
+### 6.3 Growth of the suite
 
 The suite passed on the complete first run (100 passed, 5 skipped), again after the
-error-handling tests were added (103 passed), and again after the boundary and validation
-cases were added (115 passed). No failures were hidden or re-run until they passed; no test was
-disabled to make the build green.
+error-handling tests were added (103 passed), again after the boundary and validation cases were
+added (115 passed), and again after the audit regression tests were added (121 passed). No
+failure was hidden or re-run until it passed; no test was disabled to make the build green, and
+the defect above was recorded rather than deleted.
 
 An **illustrative** defect entry (clearly labelled as fictional) is included in
 `test-documentation/defect-report-template.md` to demonstrate the report format. It does
@@ -202,9 +226,9 @@ not describe a defect observed in this project.
 
 | Exit criterion | Target | Actual | Verdict |
 | --- | --- | --- | --- |
-| Automated suite executed | 100% of collected tests | 115 executed, 5 skipped (environment), 0 failed | Met |
-| Line coverage of `app` | Reported and justified | 91% (35 statements uncovered, each explained in section 3) | Met |
-| Postman collection executed | All requests and assertions pass | 21 requests / 69 assertions, 0 failures | Met |
+| Automated suite executed | 100% of collected tests | 121 executed, 5 skipped (environment), 0 failed | Met |
+| Line coverage of `app` | Reported and justified | 92% (34 statements uncovered, each explained in section 3) | Met |
+| Postman collection executed | All requests and assertions pass | 16 collection requests (21 HTTP calls, incl. `pm.sendRequest` follow-ups) / 69 assertions, 0 failures | Met |
 | Open Critical/High defect on a documented core flow | 0 | 0 | Met |
 | SQL validation with 0 invalid rows | 0 rows | Pending - requires PostgreSQL (section 7) | Not verifiable here |
 | Reports completed with real results | Yes | This report, `database-validation.md`, `test-cases.csv` | Met |
@@ -222,8 +246,10 @@ not describe a defect observed in this project.
 
 ## 10. Conclusion
 
-The implemented API meets the documented behaviour for all executed scenarios: 115 automated
-tests and 69 Postman assertions pass with 0 failures, coverage is 91%, and the live server
-verification confirms create/read/update/list/stats/delete behaviour end to end. The only
-open item is the PostgreSQL-specific verification, which requires a PostgreSQL installation
+The implemented API meets the documented behaviour for all executed scenarios: 121 automated
+tests and 69 Postman assertions pass with 0 failures, coverage is 92%, and the live server
+verification confirms create/read/update/list/stats/delete behaviour end to end. One Major
+defect was found during the later repository quality audit (AUD-01 in section 6.2) and fixed
+with regression tests. The only open item is the PostgreSQL-specific verification, which
+requires a PostgreSQL installation
 and is fully scripted (`tests/integration/`, `sql/validation_queries.sql`).
